@@ -1,5 +1,3 @@
-# get constants
-include "edf.pxi"
 
 cdef extern from "edflib.h":
     int edf_set_patientcode(int, char *)
