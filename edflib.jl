@@ -119,7 +119,7 @@ mutable struct EDFHdr                     # this structure contains all the rele
     datarecord_duration::Int64            # duration of a datarecord expressed in units of 100 nanoSeconds
     datarecords_in_file::Int64            # number of datarecords in the file
     annotations_in_file::Int64            # number of annotations in the file
-    signalparam::Array{EDFParam,1}#(EDFLIB_MAXSIGNALS) # array of structs which contain the relevant signal parameters
+    signalparam::Array{EDFParam,1}()      # array of structs which contain the relevant per-signal parameters
 end
 
 const EDFLIB_VERSION = 112
@@ -335,50 +335,51 @@ function edfopen_file_readonly(path, edfhdr, read_annotations)
     edfhdr.datarecords_in_file = hdr.datarecords
     edfhdr.datarecord_duration = hdr.long_data_record_duration
 
-    annotationslist[edfhdr.handle] = NULL
+    annotationslist[edfhdr.handle] = 0
 
     hdr.annotlist_sz = 0
 
     hdr.annots_in_file = 0
 
-    edfhdr.annotations_in_file = 0LL
+    edfhdr.annotations_in_file = 0
 
-    if hdr.edfplus == 0 && hdr.bdfplus == 0
-        strcpy(edfhdr.patient, hdr.patient)
-        strcpy(edfhdr.recording, hdr.recording)
-        edfhdr.patientcode[0] = 0
-        edfhdr.gender[0] = 0
-        edfhdr.birthdate[0] = 0
-        edfhdr.patient_name[0] = 0
-        edfhdr.patient_additional[0] = 0
-        edfhdr.admincode[0] = 0
-        edfhdr.technician[0] = 0
-        edfhdr.equipment[0] = 0
-        edfhdr.recording_additional[0] = 0
+    if hdr.edfplus == false && hdr.bdfplus == false
+        edfhdr.patient = hdr.patient
+        edfhdr.recording = hdr.recording
+        edfhdr.patientcode = ""
+        edfhdr.gender = ""
+        edfhdr.birthdate = ""
+        edfhdr.patient_name = ""
+        edfhdr.patient_additional = ""
+        edfhdr.admincode = ""
+        edfhdr.technician = ""
+        edfhdr.equipment = ""
+        edfhdr.recording_additional = ""
     else
-        edfhdr.patient[0] = 0
-        edfhdr.recording[0] = 0
-        strcpy(edfhdr.patientcode, hdr.plus_patientcode)
-        strcpy(edfhdr.gender, hdr.plus_gender)
-        strcpy(edfhdr.birthdate, hdr.plus_birthdate)
-        strcpy(edfhdr.patient_name, hdr.plus_patient_name)
-        strcpy(edfhdr.patient_additional, hdr.plus_patient_additional)
-        strcpy(edfhdr.admincode, hdr.plus_admincode)
-        strcpy(edfhdr.technician, hdr.plus_technician)
-        strcpy(edfhdr.equipment, hdr.plus_equipment)
-        strcpy(edfhdr.recording_additional, hdr.plus_recording_additional)
+        edfhdr.patient = ""
+        edfhdr.recording = ""
+        edfhdr.patientcode = hdr.plus_patientcode
+        edfhdr.gender = hdr.plus_gender
+        edfhdr.birthdate = hdr.plus_birthdate
+        edfhdr.patient_name = hdr.plus_patient_name
+        edfhdr.patient_additional = hdr.plus_patient_additional
+        edfhdr.admincode = hdr.plus_admincode
+        edfhdr.technician = hdr.plus_technician
+        edfhdr.equipment = hdr.plus_equipment
+        edfhdr.recording_additional = hdr.plus_recording_additional
 
-        if((read_annotations==EDFLIB_READ_ANNOTATIONS)||(read_annotations==EDFLIB_READ_ALL_ANNOTATIONS))
-            if(edflib_get_annotations(hdr, edfhdr.handle, read_annotations))
+        if read_annotations == EDFLIB_READ_ANNOTATIONS ||
+           read_annotations == EDFLIB_READ_ALL_ANNOTATIONS
+            if edflib_get_annotations(hdr, edfhdr.handle, read_annotations) == 0
                 edfhdr.filetype = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-                fclose(file)
+                close(file)
                 return -1
             end
         end
     end
     edfhdr.annotations_in_file = hdr.annots_in_file
     strcpy(hdr.path, path)
-    edf_files_open++
+    edf_files_open += 1
 
     j = 0
     for i in 1:hdr.edfsignals
@@ -390,10 +391,10 @@ function edfopen_file_readonly(path, edfhdr, read_annotations)
     for i in 1:edfhdr.edfsignals
         channel = hdr.mapped_signals[i]
 
-        strcpy(edfhdr.signalparam[i].label, hdr.edfparam[channel].label)
-        strcpy(edfhdr.signalparam[i].transducer, hdr.edfparam[channel].transducer)
-        strcpy(edfhdr.signalparam[i].physdimension, hdr.edfparam[channel].physdimension)
-        strcpy(edfhdr.signalparam[i].prefilter, hdr.edfparam[channel].prefilter)
+        edfhdr.signalparam[i].label = hdr.edfparam[channel].label
+        edfhdr.signalparam[i].transducer = hdr.edfparam[channel].transducer
+        edfhdr.signalparam[i].physdimension = hdr.edfparam[channel].physdimension
+        edfhdr.signalparam[i].prefilter = hdr.edfparam[channel].prefilter
         edfhdr.signalparam[i].smp_in_file = hdr.edfparam[channel].smp_per_record * hdr.datarecords
         edfhdr.signalparam[i].phys_max = hdr.edfparam[channel].phys_max
         edfhdr.signalparam[i].phys_min = hdr.edfparam[channel].phys_min
@@ -559,7 +560,6 @@ end
 
 
 function edfread_physical_samples(handle, edfsignal, n, buf)
-
     if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
        edfsignal < 0 || hdrlist[handle].writemode != 0 || n < 0 ||
        edfsignal >= hdrlist[handle].edfsignals - hdrlist[handle].nr_annot_chns)
@@ -599,31 +599,26 @@ function edfread_physical_samples(handle, edfsignal, n, buf)
     phys_bitvalue = hdr.edfparam[channel].bitvalue
     phys_offset = hdr.edfparam[channel].offset
     if hdr.edf != 0
-        for(i=0 i<n i++)
-            if(!(sample_pntr%smp_per_record))
-                if(i)
-                    seek(file, jump, SEEK_CUR)
+        for i in 1:n
+            if sample_pntr % smp_per_record) == 0
+                if i > 1
+                    seek(file, jump)
                 end
             end
-            var.four[0] = read(file, 1)
-            tmp = read(file, 1)
-            if tmp == EOF
-                return -1
-            end
-            var.four[1] = tmp
-            buf[i] = phys_bitvalue * (phys_offset + (double)var.two_signed[0])
+            i16 = read(file, Int16)
+            buf[i] = phys_bitvalue * (phys_offset + Float64(i16))
             sample_pntr++
         end
-    if(hdr.bdf)
+    if hdr.bdf != 0
         for i in 1:n
-            if((sample_pntr %s mp_per_record) == 0)
+            if sample_pntr %smp_per_record == 0
                 if i == 1
-                    fseeko(file, jump, SEEK_CUR)
+                    seek(file, jump)
                 end
             end
-            fourui8 = read(file, UInt8, 4)
-            fourui8[4] = fourui8[3] & 0x80 != 0 ? 0xff : 0
-            buf[i] = phys_bitvalue * (phys_offset + reinterpret(Float32, fourui8))
+            fourui8[1:3] .= read(file, UInt8, 3)
+            fourui8[4] = fourui8[3] & 0x80 > 0 ? 0xff : 0
+            buf[i] = phys_bitvalue * (phys_offset + Float32(reinterpret(Int32, fourui8)))
             sample_pntr++
         end
     end
@@ -632,1606 +627,422 @@ function edfread_physical_samples(handle, edfsignal, n, buf)
 end
 
 
-int edfread_digital_samples(int handle, int edfsignal, int n, int *buf)
-{
-  int bytes_per_smpl=2,
-      tmp,
-      i,
-      channel
-
-  long long smp_in_file,
-            offset,
-            sample_pntr,
-            smp_per_record,
-            jump
-
-  struct edfhdrblock *hdr
-
-  union {
-          unsigned int one
-          signed int one_signed
-          unsigned short two[2]
-          signed short two_signed[2]
-          unsigned char four[4]
-        } var
-
-  FILE *file
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(edfsignal<0)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].writemode)
-  {
-    return(-1)
-  }
-
-  if(edfsignal>=(hdrlist[handle].edfsignals - hdrlist[handle].nr_annot_chns))
-  {
-    return(-1)
-  }
-
-  channel = hdrlist[handle].mapped_signals[edfsignal]
-
-  if(n<0LL)
-  {
-    return(-1)
-  }
-
-  if(n==0LL)
-  {
-    return(0LL)
-  }
-
-  hdr = hdrlist[handle]
-
-  if(hdr.edf)
-  {
-    bytes_per_smpl = 2
-  }
-
-  if(hdr.bdf)
-  {
-    bytes_per_smpl = 3
-  }
-
-  smp_in_file = hdr.edfparam[channel].smp_per_record * hdr.datarecords
-
-  if((hdr.edfparam[channel].sample_pntr + n) > smp_in_file)
-  {
-    n = smp_in_file - hdr.edfparam[channel].sample_pntr
-
-    if(n==0)
-    {
-      return(0LL)
-    }
-
-    if(n<0)
-    {
-      return(-1)
-    }
-  }
-
-  file = hdr.file_hdl
-
-  offset = hdr.hdrsize
-  offset += (hdr.edfparam[channel].sample_pntr / hdr.edfparam[channel].smp_per_record) * hdr.recordsize
-  offset += hdr.edfparam[channel].buf_offset
-  offset += ((hdr.edfparam[channel].sample_pntr % hdr.edfparam[channel].smp_per_record) * bytes_per_smpl)
-
-  fseeko(file, offset, SEEK_SET)
-
-  sample_pntr = hdr.edfparam[channel].sample_pntr
-
-  smp_per_record = hdr.edfparam[channel].smp_per_record
-
-  jump = hdr.recordsize - (smp_per_record * bytes_per_smpl)
-
-  if(hdr.edf)
-  {
-    for(i=0 i<n i++)
-    {
-      if(!(sample_pntr%smp_per_record))
-      {
-        if(i)
-        {
-          fseeko(file, jump, SEEK_CUR)
-        }
-      }
-
-      var.four[0] = fgetc(file)
-      tmp = fgetc(file)
-      if(tmp==EOF)
-      {
-        return(-1)
-      }
-      var.four[1] = tmp
-
-      buf[i] = var.two_signed[0]
-
-      sample_pntr++
-    }
-  }
-
-  if(hdr.bdf)
-  {
-    for(i=0 i<n i++)
-    {
-      if(!(sample_pntr%smp_per_record))
-      {
-        if(i)
-        {
-          fseeko(file, jump, SEEK_CUR)
-        }
-      }
-
-      var.four[0] = fgetc(file)
-      var.four[1] = fgetc(file)
-      tmp = fgetc(file)
-      if(tmp==EOF)
-      {
-        return(-1)
-      }
-      var.four[2] = tmp
-
-      if(var.four[2]&0x80)
-      {
-        var.four[3] = 0xff
-      }
-      else
-      {
-        var.four[3] = 0x00
-      }
-
-      buf[i] = var.one_signed
-
-      sample_pntr++
-    }
-  }
-
-  hdr.edfparam[channel].sample_pntr = sample_pntr
-
-  return(n)
-}
-
-
-int edf_get_annotation(int handle, int n, struct edf_annotation_struct *annot)
-{
-  memset(annot, 0, sizeof(struct edf_annotation_struct))
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].writemode)
-  {
-    return(-1)
-  }
-
-  if(n<0)
-  {
-    return(-1)
-  }
-
-  if(n>=hdrlist[handle].annots_in_file)
-  {
-    return(-1)
-  }
-
-  annot.onset = (annotationslist[handle] + n).onset
-  strcpy(annot.duration, (annotationslist[handle] + n).duration)
-  strcpy(annot.annotation, (annotationslist[handle] + n).annotation)
-
-  return(0)
-}
-
-
-static struct edfhdrblock * edflib_check_edf_file(FILE *inputfile, int *edf_error)
-{
-  int i, j, p, r=0, n,
-      dotposition,
-      error
-
-  char *edf_hdr,
-       scratchpad[128],
-       scratchpad2[64]
-
-  struct edfhdrblock *edfhdr
-
-/***************** check header ******************************/
-
-  edf_hdr = (char *)calloc(1, 256)
-  if(edf_hdr==NULL)
-  {
-    *edf_error = EDFLIB_MALLOC_ERROR
-    return(NULL)
-  }
-
-  edfhdr = (struct edfhdrblock *)calloc(1, sizeof(struct edfhdrblock))
-  if(edfhdr==NULL)
-  {
-    free(edf_hdr)
-    *edf_error = EDFLIB_MALLOC_ERROR
-    return(NULL)
-  }
-
-  rewind(inputfile)
-  if(fread(edf_hdr, 256, 1, inputfile)!=1)
-  {
-    *edf_error = EDFLIB_FILE_READ_ERROR
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-/**************************** VERSION ***************************************/
-
-  strncpy(scratchpad, edf_hdr, 8)
-  scratchpad[8] = 0
-
-  if(((signed char *)scratchpad)[0]==-1)   /* BDF-file */
-  {
-    for(i=1 i<8 i++)
-    {
-      if((scratchpad[i]<32)||(scratchpad[i]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(strcmp(scratchpad + 1, "BIOSEMI"))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    edfhdr.bdf = 1
-  }
-  else    /* EDF-file */
-  {
-    for(i=0 i<8 i++)
-    {
-      if((scratchpad[i]<32)||(scratchpad[i]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(strcmp(scratchpad, "0       "))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    edfhdr.edf = 1
-  }
-
-  strncpy(edfhdr.version, edf_hdr, 8)
-  edfhdr.version[8] = 0
-  if(edfhdr.bdf)  edfhdr.version[0] = '.'
-
-/********************* PATIENTNAME *********************************************/
-
-  strncpy(scratchpad, edf_hdr + 8, 80)
-  scratchpad[80] = 0
-  for(i=0 i<80 i++)
-  {
-    if((((unsigned char *)scratchpad)[i]<32)||(((unsigned char *)scratchpad)[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  strncpy(edfhdr.patient, edf_hdr + 8, 80)
-  edfhdr.patient[80] = 0
-
-/********************* RECORDING *********************************************/
-
-  strncpy(scratchpad, edf_hdr + 88, 80)
-  scratchpad[80] = 0
-  for(i=0 i<80 i++)
-  {
-    if((((unsigned char *)scratchpad)[i]<32)||(((unsigned char *)scratchpad)[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  strncpy(edfhdr.recording, edf_hdr + 88, 80)
-  edfhdr.recording[80] = 0
-
-/********************* STARTDATE *********************************************/
-
-  strncpy(scratchpad, edf_hdr + 168, 8)
-  scratchpad[8] = 0
-  for(i=0 i<8 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  error = 0
-
-  if((edf_hdr[170]!='.')||(edf_hdr[173]!='.'))  error = 1
-  if((edf_hdr[168]<48)||(edf_hdr[168]>57))      error = 1
-  if((edf_hdr[169]<48)||(edf_hdr[169]>57))      error = 1
-  if((edf_hdr[171]<48)||(edf_hdr[171]>57))      error = 1
-  if((edf_hdr[172]<48)||(edf_hdr[172]>57))      error = 1
-  if((edf_hdr[174]<48)||(edf_hdr[174]>57))      error = 1
-  if((edf_hdr[175]<48)||(edf_hdr[175]>57))      error = 1
-  strncpy(scratchpad, edf_hdr + 168, 8)
-
-  if(error)
-  {
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  scratchpad[2] = 0
-  scratchpad[5] = 0
-  scratchpad[8] = 0
-
-  if((edflib_atof_nonlocalized(scratchpad)<1)||(edflib_atof_nonlocalized(scratchpad)>31))
-  {
-    strncpy(scratchpad, edf_hdr + 168, 8)
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  if((edflib_atof_nonlocalized(scratchpad+3)<1)||(edflib_atof_nonlocalized(scratchpad+3)>12))
-  {
-    strncpy(scratchpad, edf_hdr + 168, 8)
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  edfhdr.startdate_day = edflib_atof_nonlocalized(scratchpad)
-  edfhdr.startdate_month = edflib_atof_nonlocalized(scratchpad + 3)
-  edfhdr.startdate_year = edflib_atof_nonlocalized(scratchpad + 6)
-  if(edfhdr.startdate_year>84)
-  {
-    edfhdr.startdate_year += 1900
-  }
-  else
-  {
-    edfhdr.startdate_year += 2000
-  }
-
-/********************* STARTTIME *********************************************/
-
-  strncpy(scratchpad, edf_hdr + 176, 8)
-  scratchpad[8] = 0
-  for(i=0 i<8 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  error = 0
-
-  if((edf_hdr[178]!='.')||(edf_hdr[181]!='.'))  error = 1
-  if((edf_hdr[176]<48)||(edf_hdr[176]>57))      error = 1
-  if((edf_hdr[177]<48)||(edf_hdr[177]>57))      error = 1
-  if((edf_hdr[179]<48)||(edf_hdr[179]>57))      error = 1
-  if((edf_hdr[180]<48)||(edf_hdr[180]>57))      error = 1
-  if((edf_hdr[182]<48)||(edf_hdr[182]>57))      error = 1
-  if((edf_hdr[183]<48)||(edf_hdr[183]>57))      error = 1
-
-  strncpy(scratchpad, edf_hdr + 176, 8)
-
-  if(error)
-  {
-    strncpy(scratchpad, edf_hdr + 176, 8)
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  scratchpad[2] = 0
-  scratchpad[5] = 0
-  scratchpad[8] = 0
-
-  if(edflib_atof_nonlocalized(scratchpad)>23)
-  {
-    strncpy(scratchpad, edf_hdr + 176, 8)
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  if(edflib_atof_nonlocalized(scratchpad+3)>59)
-  {
-    strncpy(scratchpad, edf_hdr + 176, 8)
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  if(edflib_atof_nonlocalized(scratchpad+6)>59)
-  {
-    strncpy(scratchpad, edf_hdr + 176, 8)
-    scratchpad[8] = 0
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  edfhdr.starttime_hour = edflib_atof_nonlocalized(scratchpad)
-  edfhdr.starttime_minute = edflib_atof_nonlocalized(scratchpad + 3)
-  edfhdr.starttime_second = edflib_atof_nonlocalized(scratchpad + 6)
-
-  edfhdr.l_starttime = 3600 * edflib_atof_nonlocalized(scratchpad)
-  edfhdr.l_starttime += 60 * edflib_atof_nonlocalized(scratchpad + 3)
-  edfhdr.l_starttime += edflib_atof_nonlocalized(scratchpad + 6)
-
-  edfhdr.l_starttime *= EDFLIB_TIME_DIMENSION
-
-/***************** NUMBER OF SIGNALS IN HEADER *******************************/
-
-  strncpy(scratchpad, edf_hdr + 252, 4)
-  scratchpad[4] = 0
-  for(i=0 i<4 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  if(edflib_is_integer_number(scratchpad))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-  edfhdr.edfsignals = edflib_atof_nonlocalized(scratchpad)
-  if(edfhdr.edfsignals<1)
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  if(edfhdr.edfsignals>EDFLIB_MAXSIGNALS)
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-/***************** NUMBER OF BYTES IN HEADER *******************************/
-
-  strncpy(scratchpad, edf_hdr + 184, 8)
-  scratchpad[8] = 0
-
-  for(i=0 i<8 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  if(edflib_is_integer_number(scratchpad))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  n  = edflib_atof_nonlocalized(scratchpad)
-  if((edfhdr.edfsignals * 256 + 256)!=n)
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-/********************* RESERVED FIELD *************************************/
-
-  edfhdr.edfplus = 0
-  edfhdr.discontinuous = 0
-  strncpy(scratchpad, edf_hdr + 192, 44)
-  scratchpad[44] = 0
-
-  for(i=0 i<44 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  if(edfhdr.edf)
-  {
-    if(!strncmp(scratchpad, "EDF+C", 5))
-    {
-      edfhdr.edfplus = 1
-    }
-
-    if(!strncmp(scratchpad, "EDF+D", 5))
-    {
-      edfhdr.edfplus = 1
-      edfhdr.discontinuous = 1
-    }
-  }
-
-  if(edfhdr.bdf)
-  {
-    if(!strncmp(scratchpad, "BDF+C", 5))
-    {
-      edfhdr.bdfplus = 1
-    }
-
-    if(!strncmp(scratchpad, "BDF+D", 5))
-    {
-      edfhdr.bdfplus = 1
-      edfhdr.discontinuous = 1
-    }
-  }
-
-  strncpy(edfhdr.reserved, edf_hdr + 192, 44)
-  edfhdr.reserved[44] = 0
-
-/********************* NUMBER OF DATARECORDS *************************************/
-
-  strncpy(scratchpad, edf_hdr + 236, 8)
-  scratchpad[8] = 0
-
-  for(i=0 i<8 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  if(edflib_is_integer_number(scratchpad))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  edfhdr.datarecords = edflib_atof_nonlocalized(scratchpad)
-  if(edfhdr.datarecords<1)
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-/********************* DATARECORD DURATION *************************************/
-
-  strncpy(scratchpad, edf_hdr + 244, 8)
-  scratchpad[8] = 0
-
-  for(i=0 i<8 i++)
-  {
-    if((scratchpad[i]<32)||(scratchpad[i]>126))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-  if(edflib_is_number(scratchpad))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  edfhdr.data_record_duration = edflib_atof_nonlocalized(scratchpad)
-  if(edfhdr.data_record_duration < -0.000001)
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  edfhdr.long_data_record_duration = edflib_get_long_duration(scratchpad)
-
-  free(edf_hdr)
-
-/********************* START WITH THE SIGNALS IN THE HEADER *********************/
-
-  edf_hdr = (char *)calloc(1, (edfhdr.edfsignals + 1) * 256)
-  if(edf_hdr==NULL)
-  {
-    *edf_error = EDFLIB_MALLOC_ERROR
-    free(edfhdr)
-    return(NULL)
-  }
-
-  rewind(inputfile)
-  if(fread(edf_hdr, (edfhdr.edfsignals + 1) * 256, 1, inputfile)!=1)
-  {
-    *edf_error = EDFLIB_FILE_READ_ERROR
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  edfhdr.edfparam = (struct edfparamblock *)calloc(1, sizeof(struct edfparamblock) * edfhdr.edfsignals)
-  if(edfhdr.edfparam==NULL)
-  {
-    *edf_error = EDFLIB_MALLOC_ERROR
-    free(edf_hdr)
-    free(edfhdr)
-    return(NULL)
-  }
-
-/**************************** LABELS *************************************/
-
-  edfhdr.nr_annot_chns = 0
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (i * 16), 16)
-    for(j=0 j<16 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    if(edfhdr.edfplus)
-    {
-      if(!strncmp(scratchpad, "EDF Annotations ", 16))
-      {
-        edfhdr.annot_ch[edfhdr.nr_annot_chns] = i
-        edfhdr.nr_annot_chns++
-        edfhdr.edfparam[i].annotation = 1
-      }
-    }
-    if(edfhdr.bdfplus)
-    {
-      if(!strncmp(scratchpad, "BDF Annotations ", 16))
-      {
-        edfhdr.annot_ch[edfhdr.nr_annot_chns] = i
-        edfhdr.nr_annot_chns++
-        edfhdr.edfparam[i].annotation = 1
-      }
-    }
-    strncpy(edfhdr.edfparam[i].label, edf_hdr + 256 + (i * 16), 16)
-    edfhdr.edfparam[i].label[16] = 0
-  }
-  if(edfhdr.edfplus&&(!edfhdr.nr_annot_chns))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr.edfparam)
-    free(edfhdr)
-    return(NULL)
-  }
-  if(edfhdr.bdfplus&&(!edfhdr.nr_annot_chns))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr.edfparam)
-    free(edfhdr)
-    return(NULL)
-  }
-  if((edfhdr.edfsignals!=edfhdr.nr_annot_chns)||((!edfhdr.edfplus)&&(!edfhdr.bdfplus)))
-  {
-    if(edfhdr.data_record_duration<0.0000001)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-/**************************** TRANSDUCER TYPES *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 16) + (i * 80), 80)
-    for(j=0 j<80 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    strncpy(edfhdr.edfparam[i].transducer, edf_hdr + 256 + (edfhdr.edfsignals * 16) + (i * 80), 80)
-    edfhdr.edfparam[i].transducer[80] = 0
-
-    if((edfhdr.edfplus) || (edfhdr.bdfplus))
-    {
-      if(edfhdr.edfparam[i].annotation)
-      {
-        for(j=0 j<80 j++)
-        {
-          if(edfhdr.edfparam[i].transducer[j]!=' ')
-          {
-            *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-            free(edf_hdr)
-            free(edfhdr.edfparam)
-            free(edfhdr)
-            return(NULL)
-          }
-        }
-      }
-    }
-  }
-
-/**************************** PHYSICAL DIMENSIONS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 96) + (i * 8), 8)
-    for(j=0 j<8 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    strncpy(edfhdr.edfparam[i].physdimension, edf_hdr + 256 + (edfhdr.edfsignals * 96) + (i * 8), 8)
-    edfhdr.edfparam[i].physdimension[8] = 0
-  }
-
-/**************************** PHYSICAL MINIMUMS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 104) + (i * 8), 8)
-    scratchpad[8] = 0
-
-    for(j=0 j<8 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(edflib_is_number(scratchpad))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    edfhdr.edfparam[i].phys_min = edflib_atof_nonlocalized(scratchpad)
-  }
-
-/**************************** PHYSICAL MAXIMUMS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 112) + (i * 8), 8)
-    scratchpad[8] = 0
-
-    for(j=0 j<8 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(edflib_is_number(scratchpad))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    edfhdr.edfparam[i].phys_max = edflib_atof_nonlocalized(scratchpad)
-    if(edfhdr.edfparam[i].phys_max==edfhdr.edfparam[i].phys_min)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-/**************************** DIGITAL MINIMUMS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 120) + (i * 8), 8)
-    scratchpad[8] = 0
-
-    for(j=0 j<8 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(edflib_is_integer_number(scratchpad))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    n = edflib_atof_nonlocalized(scratchpad)
-    if(edfhdr.edfplus)
-    {
-      if(edfhdr.edfparam[i].annotation)
-      {
-        if(n!=-32768)
-        {
-          *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-          free(edf_hdr)
-          free(edfhdr.edfparam)
-          free(edfhdr)
-          return(NULL)
-        }
-      }
-    }
-    if(edfhdr.bdfplus)
-    {
-      if(edfhdr.edfparam[i].annotation)
-      {
-        if(n!=-8388608)
-        {
-          *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-          free(edf_hdr)
-          free(edfhdr.edfparam)
-          free(edfhdr)
-          return(NULL)
-        }
-      }
-    }
-    if(edfhdr.edf)
-    {
-      if((n>32767)||(n<-32768))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    if(edfhdr.bdf)
-    {
-      if((n>8388607)||(n<-8388608))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    edfhdr.edfparam[i].dig_min = n
-  }
-
-/**************************** DIGITAL MAXIMUMS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 128) + (i * 8), 8)
-    scratchpad[8] = 0
-
-    for(j=0 j<8 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(edflib_is_integer_number(scratchpad))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    n = edflib_atof_nonlocalized(scratchpad)
-    if(edfhdr.edfplus)
-    {
-      if(edfhdr.edfparam[i].annotation)
-      {
-        if(n!=32767)
-        {
-          *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-          free(edf_hdr)
-          free(edfhdr.edfparam)
-          free(edfhdr)
-          return(NULL)
-        }
-      }
-    }
-    if(edfhdr.bdfplus)
-    {
-      if(edfhdr.edfparam[i].annotation)
-      {
-        if(n!=8388607)
-        {
-          *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-          free(edf_hdr)
-          free(edfhdr.edfparam)
-          free(edfhdr)
-          return(NULL)
-        }
-      }
-    }
-    if(edfhdr.edf)
-    {
-      if((n>32767)||(n<-32768))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
+function edfread_digital_samples(handle, edfsignal, n, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       edfsignal < 0 || hdrlist[handle].writemode != 0 || n < 0 ||
+       edfsignal >= hdrlist[handle].edfsignals - hdrlist[handle].nr_annot_chns)
+        return -1
+
+    channel = hdrlist[handle].mapped_signals[edfsignal]
+    if n == 0
+        return 0
+    end
+    hdr = hdrlist[handle]
+    if hdr.bdf != 0
+        bytes_per_smpl = 3
+    else # edf
+        bytes_per_smpl = 2
+    end
+    smp_in_file = hdr.edfparam[channel].smp_per_record * hdr.datarecords
+    if hdr.edfparam[channel].sample_pntr + n > smp_in_file
+        n = smp_in_file - hdr.edfparam[channel].sample_pntr
+        if n == 0
+            return 0
+        elseif n < 0
+            return -1
+        end
+    end
+
+    file = hdr.file_hdl
+
+    offset = hdr.hdrsize
+    offset += (hdr.edfparam[channel].sample_pntr / hdr.edfparam[channel].smp_per_record) * hdr.recordsize
+    offset += hdr.edfparam[channel].buf_offset
+    offset += ((hdr.edfparam[channel].sample_pntr % hdr.edfparam[channel].smp_per_record) * bytes_per_smpl)
+    seek(file, offset)
+    sample_pntr = hdr.edfparam[channel].sample_pntr
+    smp_per_record = hdr.edfparam[channel].smp_per_record
+    jump = hdr.recordsize - (smp_per_record * bytes_per_smpl)
+    if hdr.edf != 0
+        for i in 1:n
+            if sample_pntr % smp_per_record) == 0
+                if i > 1
+                    seek(file, jump)
+                end
+            end
+            buf[i] = read(file, Int16)
+            sample_pntr++
+        end
+    if hdr.bdf != 0
+        for i in 1:n
+            if sample_pntr %smp_per_record == 0
+                if i == 1
+                    seek(file, jump)
+                end
+            end
+            fourui8[1:3] .= read(file, UInt8, 3)
+            fourui8[4] = fourui8[3] & 0x80 > 0 ? 0xff : 0
+            buf[i] = reinterpret(Int32, fourui8)
+            sample_pntr++
+        end
+    end
+    hdr.edfparam[channel].sample_pntr = sample_pntr
+    return n
+end
+
+
+edf_get_annotation(handle, n)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       edfsignal < 0 || hdrlist[handle].writemode != 0 || n < 0 ||
+       n >= hdrlist[handle].annots_in_file
+        return -1
+    return deepcopy(EDFAnnotation(annotationslist[handle + n])
+end
+
+
+edflib_check_edf_file(inputfile, edf_error)
+    hasforbiddenchars(bytes) =
+        findfirst(c -> (c < 32) || (c > 126), bytes) > 0 ? true: false
+    hasnonnumericchars(bytes) =
+        findfirst(c ->(c < 48) || (c > 57), bytes) > 0? true: false
+    edfhdr = EDFHdr()
+    rewind(inputfile)
+    try
+        hdrbuf = read(inputfile, UInt8, 256)                   # check header
+        if hdrbuf[1:8] == b"\xffBIOSEMI"                       # version bdf
+            edfhdr.bdf = true
+            edfhdr.edf = false
+        elseif hdrbuf[1:8] = "\0       "                       # version edf
+            edfhdr.bdf = false
+            edfhdr.edf = true
+        else
+            throw("identification code error, should be for edf or bdf")
+        end
+        edfhdr.version = hdrbuf[1:8]
+        if edfhdr.bdf
+            edfhr.version[1] = '.'
+        end
+
+        if hasforbiddenchars(hdrbuf[9:88])
+            throw("bad subject identification")
+        else
+            edfhdr.patient = convert(String, hdrbuf[9:80])       # patient
+        end
+        if hasforbiddenchars(hdrbuf[89:168])
+            throw("bad local recording identifier")
+        else
+            edfhdr.recording = hdrbuf[89:168]                   # recording
+        end
+        if hasforbiddenchars(hdrbuf[169:176])
+            throw("Bad startdate characters")
+        else
+            datestring = convert(String, hdrbuf[89:168])        # start date
+            date = Date(datestring, "dd.mm.yy")
+            if Dates.year(date) < 84
+                date += Dates.Year(2000)
+            else
+                date += Dates.Year(1900)
+            end
+            edfhdr.startdate_day = Dates.Day(date)
+            edfhdr.startdate_month = Dates.Month(date)
+            edfhdr.startdate_year = Dates.Year(date)
+        end
+        if hasforbiddenchars(hdrbuf[177:184])
+            throw("bad starttime characters")
+        else
+            timestring = convert(String, hdrbuf[177:184])       # start time
+            mat = match(timestring, r"(\d\d).(\d\d).(\d\d)")
+            starttime_hour, starttime_minute, starttime_second = mat.captures
+            l_starttime = starttime_hour * 3600 + starttime_hour * 60 + starttime_second
+            edfhdr.l_starttime = l_starttime * EDFLIB_TIME_DIMENSION
+            edfhdr.starttime_hour = starttime_hour
+            edfhdr.starttime_minute = starttime_minute
+            edfhdr.starttime_second = starttime_second
+        end
+        if hasforbiddenchars(hdrbuf[253:256])
+            throw("bad bytes for signal count")
+        else
+            edfhdr.edfsignals = parse(Int16, hdrbuf[253:256])   # number of channels(signals)
+            if edfhdr.edfsignals < 0 || edf.edfsignals > EDF_MAXSIGNALS
+                throw("bad signal number")
+            end
+        end
+        if hasforbiddenchars(hdrbuf[185:192])
+            throw("bad bytes in header number")
+        else
+            headersize = parse(Int32, hdrbuf[185:192])          # edf header size, changes with channels
+            if edfhdr.edfsignals * 256 + 256 != headersize
+                throw("Bad header size")
+            end
+        end
+        if hasforbiddenchars(hdrbuf[193:236])
+            throw("bad bytes in reserved field")
+        else
+            edfhdr.edfplus = false
+            edfhdr.discontinuous = false
+            subtype = convert(String, hdrbuf[193:197])          # reserved field, may specify a subtype
+            if edfhdr.edf
+                if subtype == "EDF+C"
+                    edfhdr.edfplus = true
+                elseif subtype == "EDF+D"
+                    edfhdr.edfplus = true
+                    edfhdr.discontinuous = true
+                end
+            elseif edfhdr.bdf
+                if subtype = "BDF+C"
+                    edfhdr.bdfplus = true
+                elseif subtype == "BDF+D"
+                    edfhdr.bdfplus = true
+                    edfhdr.discontinuous = true
+                end
+            end
+        if hasforbiddenchars(hdrbuf[237:244])
+            throw("bad bytes in number of data records")
+        else
+            edfhdr.datarecords = parse(Int32, hdrbuf[237:244])  # number of data records
+            if edfhdr.datarecords < 1
+                throw("Bad data record count, cannot be -1 for unknown for this program")
+            end
+        end
+        if hasforbiddenchars(hdrbuf[245:252])
+            throw("bad bytes in number of data records")
+        else
+            edfhdr.data_record_duration = parse(Float32, hdrbuf[245:252]) # datarecord duration in seconds
+        end
+    catch
+        edf_error[1] = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
+        return 0
+    end
+
+    # process the signals in the header after re-reading entire header into hdrbuf
+    rewind(inputfile)
+    try
+        hdrbuf = read(inputfile, UInt8, edfhdr.edfsignals * 256 + 256)
+        edfhdr.nr_annot_chns = 0
+
+        for i in 1:edfhdr.edfsignals  # loop over channel signal parameters
+            pblock = EDFParam()
+            pblock.annotation = false
+            if hasforbiddenchars(hdrbuf[i*16+257:i*16+508])
+                throw("bad bytes for signal parameters")
+            end
+            cpos = 257 + (i-1) * 16
+            channellabel = convert(String, hdrbuf[cpos:cpos+15])
+            pblock.label = channellabel                         # channel label in ASCII, eg "Fp1"
+            tpos = 257 + edfhdr.edfsignals * 16 + (i-1) * 80
+            transducertype = convert(String, hdrbuf[tpos:tpos+79])
+            pblock.transducer = transducertype                  # transducer type eg "active electrode"
+            pdimpos = 257 + edfhdr.edfsignals * 96 + (i-1) * 8
+            pblock.physdimension = convert(String, hdrbuf[pdimpos:pdimpos+7] # physical dimensions eg. "uV"
+            pminpos = 257 + edfhdr.edfsignals * 104 + (i-1) * 8
+            pblock.phys_min = parse(Float32, hdrbuf[pminpos, pminpos+8])  # physical minimum in above dimensions
+            pmaxpos = 257 + edfhdr.edfsignals * 112 + (i-1) * 8
+            pblock.phys_max = parse(Float32, hdrbuf[pmaxpos, pmaxpos+8])  # physical maximum in above dimensions
+            pdminpos = 257 + edfhdr.edfsignals * 120 + (i-1) * 8
+            pblock.dig_min = parse(Float32, hdrbuf[pdminpos, pdminpos+8])  # digital minimum in above dimensions
+            pdmaxpos = 257 + edfhdr.edfsignals * 128 + (i-1) * 8
+            pblock.dig_max = parse(Float32, hdrbuf[pdmaxpos, pdmaxpos+8])  # digital maximum in above dimensions
+            if edfhdr.edfplus && channellabel[1:16] != "EDF Annotations "
+                edfhdr.annot_ch[edfhdr.nr_annot_chns] = i-1
+                edfhdr.nr_annot_chns += 1
+                pblock.annotation = true
+            elseif edfhdr.bdfplus && channellabel[1:16] != "BDF Annotations "
+                edfhdr.annot_ch[edfhdr.nr_annot_chns] = i-1
+                edfhdr.nr_annot_chns += 1
+                pblock.annotation = true
+            end
+            if edfhdr.edfplus || edfhdr.bdfplus
+                if pblock.annotation && match(transducertype, r"\S") != nothing
+                    throw("plus file annotations should not have a transducertype")
+                end
+            end
+            push!(edfhdr.signalparam, pblock)
+        end
+        if edfhdr.edfplus && isempty(edfhdr.signalparam)
+            throw("EDFplus missing signal parameters")
+        elseif edfhdr.bdfplus && isempty(edfhdr.signalparam)
+            throw("BDFplus missing signal parameters")
+        elseif edfhdr.edfplus && pblock.annotation && (pblock.dig_min != -32768 || pblock.dig_max != 32767)
+            throw("edfplus annotation data entry should have the digital min parameters set to extremes")
+        elseif edfhdr.bdfplus && pblock.annotation && (pblock.dig_min != -8388608 || pblock.dig_max != 8388607)
+            throw("bdf annotation data entry should have the digital max parameters set to extremes")
+        elseif edfhdr.edf && (pblock.dig_min < -32768 || pblock.digital_min > 32767 ||
+               pblock.dig_max < -32768 || pblock.digital_max > 32767)
+            throw("edf digital parameter out of range")
+        elseif edfhdr.bdf && (pblock.dig_min < -8388608 || pblock.digital_min > 8388607 ||
+               pblock.dig_max < -8388608 || pblock.digital_max > 8388607)
+            throw("bdf digital parameter out of range")
+        elseif edfhdr.edfsignals != edf.nr_annot.chns || (!edfhdr.edfplus && !edfhdr.bdfplus)
+            if edfhdr.data_record_duration < 0.0000001
+                throw("signal data may be mislabeled")
+            end
+        end
+
+        edfhdr.recordsize = 0
+        for i in 1:edfhdr.hdrsignals
+            startpos = 257 + edfhdr.edfsignals*136*(i-1)
+            pfblock = hdrbuf[startpos:startpos+80])
+            if hasforbiddenchars(pfblock)
+                throw("bad bytes for prefilter fields")
+            else
+                edfhdr.edfparam[i].prefilter = convert(String, pfblock)  # prefiltering eg "HP:DC"
+                if (edfhdr.edfplus || edfhdr.bdfplus) && edfhdf.edfparam[i].annotation
+                    && match(edfhdr.edfparam[i].prefilter, r"\S") != nothing
+                    throw("Prefilter field should be blank in annotations in edfplus or bdfplus file")
+                end
+            end
+            startpos += 80
+            edfhdr.edfparam[i].smp_per_record = parse(Int, hdrbuf[startpos:startpos+8])
+            if edfhdr.edfparam[i].smp_per_record < 1
+                throw("Samples per data record should be a positive integer")
+            else
+                edfhdr.recordsize += n                          # edfhdr.recordsize is calculated
+                if edfhdr.bdf
+                    edfhdr.recordsize *= 3
+                    if edfhdr.recordsize > 1578640
+                        throw("record size too large for a bdf file")
+                    end
+                else
+                    edfhdr.recordsize *= 2
+                    if edfhdr.recordsize > 10485760
+                        throw("Record size too large for an edf file")
+                    end
+                end
+            end
+            startpos += 8
+            edfhdr.edfparam[i].reserved = convert(String, hdrbuf[startpos:startpos+32]) # reserved (ascii)
+            if hasforbiddenchars(pfblock)
+                throw("bad bytes for reserved per-channel field")
+            end
+        end
+
+    #=
+    from https://www.edfplus.info/specs/edfplus.html#header, December 2017:
+
+    The 'local patient identification' field must start with the subfields
+         (subfields do not contain, but are separated by, spaces):
+
+    - the code by which the patient is known in the hospital administration.
+    - sex (English, so F or M).
+    - birthdate in dd-MMM-yyyy format using the English 3-character abbreviations
+      of the month in capitals. 02-AUG-1951 is OK, while 2-AUG-1951 is not.
+    - the patients name.
+
+     Any space inside the hospital code or the name of the patient must be replaced
+     by a different character, for instance an underscore. For instance, the
+     'local patient identification' field could start with:
+     MCH-0234567 F 02-MAY-1951 Haagse_Harry.
+
+    Subfields whose contents are unknown, not applicable or must be made
+    anonymous are replaced by a single character 'X'.
+
+    Additional subfields may follow the ones described here.
+    =#
+    if edfhdr.edfplus || edfhdr.bdfplus
+        subfield = split(edfhdr.patient)
+        if length(subfield) < 4
+            throw("Plus patient identification lacking enough fields")
+        end
+        edfhdr.plus_patientcode = subfield[1][1] == 'X' ? "" : subfield[1]
+        edfhdr.plus_patientcode = replace(edfhdr.plus_patientcode, "_", " ")
+        if subfield[2] != "M" && subfield[2] != "F" && subfield[2] != "X"
+            throw("patient identification second field must be X, F or M")
+        elseif subfield[2] == "M"
+            edfhdr.plus_gender = "Male"
+        elseif subfield[2] == "F"
+            edfhdr.plus_gender = "Female"
+        else
+            edfhdf.plus_gender = ""
+        end
+        if subfield[3] = "X"
+            edfhdr.plus_birthdate = ""
+        elseif !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[3][4:6])
+            || !(Date(subfield[3], "dd-uuu-yyyy") isa Date)
+            throw("Bad birthdate field in patient identification")
+        else
+            edfhdr.plus_birthdate = subfield[3]
+        end
+        edfhdr.plus_patient_name = replace(subfield[4], "_", " ")
+        if length(subfield > 4
+            edfhdr.plus_patient_additional = join(subfield[5:end], " ")
+        end
+    #=
+     The 'local recording identification' field must start with the subfields
+     (subfields do not contain, but are separated by, spaces):
+     - The text 'Startdate'.
+     - The startdate itself in dd-MMM-yyyy format using the English 3-character
+       abbreviations of the month in capitals.
+     - The hospital administration code of the investigation, i.e. EEG number or PSG number.
+     - A code specifying the responsible investigator or technician.
+     - A code specifying the used equipment.
+     Any space inside any of these codes must be replaced by a different character,
+     for instance an underscore. The 'local recording identification' field could
+     contain: Startdate 02-MAR-2002 PSG-1234/2002 NN Telemetry03.
+     Subfields whose contents are unknown, not applicable or must be made anonymous
+     are replaced by a single character 'X'. So, if everything is unknown then the
+     'local recording identification' field would start with:
+     Startdate X X X X. Additional subfields may follow the ones described here.
+    =#
+    subfield = split(edfhdr.recording)
+    if length(subfield) < 5
+        throw("Not enough fields in plus recording data")
+    elseif subfield[1] != "Startdate" || (subfield[2] != "X" &&
+             (!(dor = Date(subfield[2], "dd-uuu-yyyy") isa Date) ||
+              !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[2][4:6]))
+        throw("Bad recording field start")
     else
-    {
-      if((n>8388607)||(n<-8388608))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    edfhdr.edfparam[i].dig_max = n
-    if(edfhdr.edfparam[i].dig_max<(edfhdr.edfparam[i].dig_min + 1))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
+        if subfield[2] == "X"
+            edfhdr.plus_startdate = ""
+        else
+            edfhdr.plus_startdate = subfield[2]
+            if Dates.year(dor) < 1970
+                throw("bad startdate year in recording data")
+            else
+                edfhdr.startdate_year = Dates.year(dor)
+            end
+        end
+        if subfield[3] == ""
+            edfhdr.plus.admincode = ""
+        else
+            edfhdr.plus_admincode = replace(subfield[3], "_", " ")
+        end
+        if subfield[4] == ""
+            edfhdr.plus_technician = ""
+        else
+            edfhdr.plus_technician = replace(subfield[4], "_", " ")
+        end
+        if subfield[5] == ""
+            edfhdr.plus.equipment = ""
+        else
+            edfhdr.plus_equipment = replace(subfield[5], "_", " ")
+        end
+        if length(subfield) > 5
+            edfhdr.plus_additional = replace(join(subfield[6:end], " "), "_", " ")
+        end
+    end
 
-/**************************** PREFILTER FIELDS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 136) + (i * 80), 80)
-    for(j=0 j<80 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    strncpy(edfhdr.edfparam[i].prefilter, edf_hdr + 256 + (edfhdr.edfsignals * 136) + (i * 80), 80)
-    edfhdr.edfparam[i].prefilter[80] = 0
-
-    if((edfhdr.edfplus) || (edfhdr.bdfplus))
-    {
-      if(edfhdr.edfparam[i].annotation)
-      {
-        for(j=0 j<80 j++)
-        {
-          if(edfhdr.edfparam[i].prefilter[j]!=' ')
-          {
-            *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-            free(edf_hdr)
-            free(edfhdr.edfparam)
-            free(edfhdr)
-            return(NULL)
-          }
-        }
-      }
-    }
-  }
-
-/*********************** NR OF SAMPLES IN EACH DATARECORD ********************/
-
-  edfhdr.recordsize = 0
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 216) + (i * 8), 8)
-    scratchpad[8] = 0
-
-    for(j=0 j<8 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    if(edflib_is_integer_number(scratchpad))
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    n = edflib_atof_nonlocalized(scratchpad)
-    if(n<1)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-    edfhdr.edfparam[i].smp_per_record = n
-    edfhdr.recordsize += n
-  }
-
-  if(edfhdr.bdf)
-  {
-    edfhdr.recordsize *= 3
-
-    if(edfhdr.recordsize > 15728640)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-  else
-  {
-    edfhdr.recordsize *= 2
-
-    if(edfhdr.recordsize > 10485760)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-  }
-
-/**************************** RESERVED FIELDS *************************************/
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    strncpy(scratchpad, edf_hdr + 256 + (edfhdr.edfsignals * 224) + (i * 32), 32)
-    for(j=0 j<32 j++)
-    {
-      if((scratchpad[j]<32)||(scratchpad[j]>126))
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-    strncpy(edfhdr.edfparam[i].reserved, edf_hdr + 256 + (edfhdr.edfsignals * 224) + (i * 32), 32)
-    edfhdr.edfparam[i].reserved[32] = 0
-  }
-
-/********************* EDF+ PATIENTNAME *********************************************/
-
-  if(edfhdr.edfplus || edfhdr.bdfplus)
-  {
-    error = 0
-    dotposition = 0
-    strncpy(scratchpad, edf_hdr + 8, 80)
-    scratchpad[80] = 0
-    for(i=0 i<80 i++)
-    {
-      if(scratchpad[i]==' ')
-      {
-        dotposition = i
-        break
-      }
-    }
-    dotposition++
-    if((dotposition>73)||(dotposition<2))  error = 1
-    if(scratchpad[dotposition + 2]!='X')
-    {
-      if(dotposition>65)  error = 1
-    }
-    if((scratchpad[dotposition]!='M')&&(scratchpad[dotposition]!='F')&&(scratchpad[dotposition]!='X'))  error = 1
-    dotposition++
-    if(scratchpad[dotposition]!=' ')  error = 1
-    if(scratchpad[dotposition + 1]=='X')
-    {
-      if(scratchpad[dotposition + 2]!=' ')  error = 1
-      if(scratchpad[dotposition + 3]==' ')  error = 1
-    }
-    else
-    {
-      if(scratchpad[dotposition + 12]!=' ')  error = 1
-      if(scratchpad[dotposition + 13]==' ')  error = 1
-      dotposition++
-      strncpy(scratchpad2, scratchpad + dotposition, 11)
-      scratchpad2[11] = 0
-      if((scratchpad2[2]!='-')||(scratchpad2[6]!='-'))  error = 1
-      scratchpad2[2] = 0
-      scratchpad2[6] = 0
-      if((scratchpad2[0]<48)||(scratchpad2[0]>57))  error = 1
-      if((scratchpad2[1]<48)||(scratchpad2[1]>57))  error = 1
-      if((scratchpad2[7]<48)||(scratchpad2[7]>57))  error = 1
-      if((scratchpad2[8]<48)||(scratchpad2[8]>57))  error = 1
-      if((scratchpad2[9]<48)||(scratchpad2[9]>57))  error = 1
-      if((scratchpad2[10]<48)||(scratchpad2[10]>57))  error = 1
-      if((edflib_atof_nonlocalized(scratchpad2)<1)||(edflib_atof_nonlocalized(scratchpad2)>31))  error = 1
-      if(strcmp(scratchpad2 + 3, "JAN"))
-        if(strcmp(scratchpad2 + 3, "FEB"))
-          if(strcmp(scratchpad2 + 3, "MAR"))
-            if(strcmp(scratchpad2 + 3, "APR"))
-              if(strcmp(scratchpad2 + 3, "MAY"))
-                if(strcmp(scratchpad2 + 3, "JUN"))
-                  if(strcmp(scratchpad2 + 3, "JUL"))
-                    if(strcmp(scratchpad2 + 3, "AUG"))
-                      if(strcmp(scratchpad2 + 3, "SEP"))
-                        if(strcmp(scratchpad2 + 3, "OCT"))
-                          if(strcmp(scratchpad2 + 3, "NOV"))
-                            if(strcmp(scratchpad2 + 3, "DEC"))
-                              error = 1
-    }
-
-    if(error)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    p = 0
-    if(edfhdr.patient[p]=='X')
-    {
-      edfhdr.plus_patientcode[0] = 0
-      p += 2
-    }
-    else
-    {
-      for(i=0 i<(80-p) i++)
-      {
-        if(edfhdr.patient[i+p]==' ')
-        {
-          break
-        }
-        edfhdr.plus_patientcode[i] = edfhdr.patient[i+p]
-        if(edfhdr.plus_patientcode[i]=='_')  edfhdr.plus_patientcode[i] = ' '
-      }
-      edfhdr.plus_patientcode[i] = 0
-      p += i + 1
-    }
-
-    if(edfhdr.patient[p]=='M')
-    {
-      strcpy(edfhdr.plus_gender, "Male")
-    }
-    if(edfhdr.patient[p]=='F')
-    {
-      strcpy(edfhdr.plus_gender, "Female")
-    }
-    if(edfhdr.patient[p]=='X')
-    {
-      edfhdr.plus_gender[0] = 0
-    }
-    for(i=0 i<(80-p)i++)
-    {
-      if(edfhdr.patient[i+p]==' ')
-      {
-        break
-      }
-    }
-    p += i + 1
-
-    if(edfhdr.patient[p]=='X')
-    {
-      edfhdr.plus_birthdate[0] = 0
-      p += 2
-    }
-    else
-    {
-      for(i=0 i<(80-p) i++)
-      {
-        if(edfhdr.patient[i+p]==' ')
-        {
-          break
-        }
-        edfhdr.plus_birthdate[i] = edfhdr.patient[i+p]
-      }
-      edfhdr.plus_birthdate[2] = ' '
-      edfhdr.plus_birthdate[3] += 32
-      edfhdr.plus_birthdate[4] += 32
-      edfhdr.plus_birthdate[5] += 32
-      edfhdr.plus_birthdate[6] = ' '
-      edfhdr.plus_birthdate[11] = 0
-      p += i + 1
-    }
-
-    for(i=0 i<(80-p)i++)
-    {
-      if(edfhdr.patient[i+p]==' ')
-      {
-        break
-      }
-      edfhdr.plus_patient_name[i] = edfhdr.patient[i+p]
-      if(edfhdr.plus_patient_name[i]=='_')  edfhdr.plus_patient_name[i] = ' '
-    }
-    edfhdr.plus_patient_name[i] = 0
-    p += i + 1
-
-    for(i=0 i<(80-p)i++)
-    {
-      edfhdr.plus_patient_additional[i] = edfhdr.patient[i+p]
-    }
-    edfhdr.plus_patient_additional[i] = 0
-    p += i + 1
-  }
-
-/********************* EDF+ RECORDINGFIELD *********************************************/
-
-  if(edfhdr.edfplus || edfhdr.bdfplus)
-  {
-    error = 0
-    strncpy(scratchpad, edf_hdr + 88, 80)
-    scratchpad[80] = 0
-    if(strncmp(scratchpad, "Startdate ", 10))  error = 1
-    if(scratchpad[10]=='X')
-    {
-      if(scratchpad[11]!=' ')  error = 1
-      if(scratchpad[12]==' ')  error = 1
-      p = 12
-    }
-    else
-    {
-      if(scratchpad[21]!=' ')  error = 1
-      if(scratchpad[22]==' ')  error = 1
-      p = 22
-      strncpy(scratchpad2, scratchpad + 10, 11)
-      scratchpad2[11] = 0
-      if((scratchpad2[2]!='-')||(scratchpad2[6]!='-'))  error = 1
-      scratchpad2[2] = 0
-      scratchpad2[6] = 0
-      if((scratchpad2[0]<48)||(scratchpad2[0]>57))  error = 1
-      if((scratchpad2[1]<48)||(scratchpad2[1]>57))  error = 1
-      if((scratchpad2[7]<48)||(scratchpad2[7]>57))  error = 1
-      if((scratchpad2[8]<48)||(scratchpad2[8]>57))  error = 1
-      if((scratchpad2[9]<48)||(scratchpad2[9]>57))  error = 1
-      if((scratchpad2[10]<48)||(scratchpad2[10]>57))  error = 1
-      if((edflib_atof_nonlocalized(scratchpad2)<1)||(edflib_atof_nonlocalized(scratchpad2)>31))  error = 1
-      r = 0
-      if(!strcmp(scratchpad2 + 3, "JAN"))  r = 1
-        else if(!strcmp(scratchpad2 + 3, "FEB"))  r = 2
-          else if(!strcmp(scratchpad2 + 3, "MAR"))  r = 3
-            else if(!strcmp(scratchpad2 + 3, "APR"))  r = 4
-              else if(!strcmp(scratchpad2 + 3, "MAY"))  r = 5
-                else if(!strcmp(scratchpad2 + 3, "JUN"))  r = 6
-                  else if(!strcmp(scratchpad2 + 3, "JUL"))  r = 7
-                    else if(!strcmp(scratchpad2 + 3, "AUG"))  r = 8
-                      else if(!strcmp(scratchpad2 + 3, "SEP"))  r = 9
-                        else if(!strcmp(scratchpad2 + 3, "OCT"))  r = 10
-                          else if(!strcmp(scratchpad2 + 3, "NOV"))  r = 11
-                            else if(!strcmp(scratchpad2 + 3, "DEC"))  r = 12
-                              else error = 1
-    }
+        edfhdr.hdrsize = edfhdr.edfsignals * 256 + 256
+        filesize = filesize(edfhdr.path)   # get actual file size
+        if filesize != edfhdr.recordsize * edfhdr.datarecords + edfhdr.hdrsize
+            throw("file size is not compatible with header information")
+        end
+    catch:
+        edf_error[1] = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
+        return 0
+    end
 
     n = 0
-    for(i=p i<80 i++)
-    {
-      if(i>78)
-      {
-        error = 1
-        break
-      }
-      if(scratchpad[i]==' ')
-      {
-        n++
-        if(scratchpad[i + 1]==' ')
-        {
-          error = 1
-          break
-        }
-      }
-      if(n>1)  break
-    }
-
-    if(error)
-    {
-      *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-      free(edf_hdr)
-      free(edfhdr.edfparam)
-      free(edfhdr)
-      return(NULL)
-    }
-
-    if(edf_hdr[98]!='X')
-    {
-      error = 0
-
-      strncpy(scratchpad, edf_hdr + 168, 8)
-      scratchpad[2] = 0
-      scratchpad[5] = 0
-      scratchpad[8] = 0
-
-      if(edflib_atof_nonlocalized(scratchpad)!=edflib_atof_nonlocalized(scratchpad2))  error = 1
-      if(edflib_atof_nonlocalized(scratchpad+3)!=r)  error = 1
-      if(edflib_atof_nonlocalized(scratchpad+6)!=edflib_atof_nonlocalized(scratchpad2+9))  error = 1
-      if(error)
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-
-      edfhdr.startdate_year = edflib_atof_nonlocalized(scratchpad2 + 7)
-
-      if(edfhdr.startdate_year<1970)
-      {
-        *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-        free(edf_hdr)
-        free(edfhdr.edfparam)
-        free(edfhdr)
-        return(NULL)
-      }
-    }
-
-    p = 10
-    for(i=0 i<(80-p) i++)
-    {
-      if(edfhdr.recording[i+p]==' ')
-      {
-        break
-      }
-      edfhdr.plus_startdate[i] = edfhdr.recording[i+p]
-    }
-    edfhdr.plus_startdate[2] = ' '
-    edfhdr.plus_startdate[3] += 32
-    edfhdr.plus_startdate[4] += 32
-    edfhdr.plus_startdate[5] += 32
-    edfhdr.plus_startdate[6] = ' '
-    edfhdr.plus_startdate[11] = 0
-    p += i + 1
-
-    if(edfhdr.recording[p]=='X')
-    {
-      edfhdr.plus_admincode[0] = 0
-      p += 2
-    }
-    else
-    {
-      for(i=0 i<(80-p) i++)
-      {
-        if(edfhdr.recording[i+p]==' ')
-        {
-          break
-        }
-        edfhdr.plus_admincode[i] = edfhdr.recording[i+p]
-        if(edfhdr.plus_admincode[i]=='_')  edfhdr.plus_admincode[i] = ' '
-      }
-      edfhdr.plus_admincode[i] = 0
-      p += i + 1
-    }
-
-    if(edfhdr.recording[p]=='X')
-    {
-      edfhdr.plus_technician[0] = 0
-      p += 2
-    }
-    else
-    {
-      for(i=0 i<(80-p) i++)
-      {
-        if(edfhdr.recording[i+p]==' ')
-        {
-          break
-        }
-        edfhdr.plus_technician[i] = edfhdr.recording[i+p]
-        if(edfhdr.plus_technician[i]=='_')  edfhdr.plus_technician[i] = ' '
-      }
-      edfhdr.plus_technician[i] = 0
-      p += i + 1
-    }
-
-    if(edfhdr.recording[p]=='X')
-    {
-      edfhdr.plus_equipment[0] = 0
-      p += 2
-    }
-    else
-    {
-      for(i=0 i<(80-p) i++)
-      {
-        if(edfhdr.recording[i+p]==' ')
-        {
-          break
-        }
-        edfhdr.plus_equipment[i] = edfhdr.recording[i+p]
-        if(edfhdr.plus_equipment[i]=='_')  edfhdr.plus_equipment[i] = ' '
-      }
-      edfhdr.plus_equipment[i] = 0
-      p += i + 1
-    }
-
-    for(i=0 i<(80-p)i++)
-    {
-      edfhdr.plus_recording_additional[i] = edfhdr.recording[i+p]
-    }
-    edfhdr.plus_recording_additional[i] = 0
-    p += i + 1
-  }
-
-/********************* FILESIZE *********************************************/
-
-  edfhdr.hdrsize = edfhdr.edfsignals * 256 + 256
-
-  fseeko(inputfile, 0LL, SEEK_END)
-  if(ftello(inputfile)!=(edfhdr.recordsize * edfhdr.datarecords + edfhdr.hdrsize))
-  {
-    *edf_error = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
-    free(edf_hdr)
-    free(edfhdr.edfparam)
-    free(edfhdr)
-    return(NULL)
-  }
-
-  n = 0
-
-  for(i=0 i<edfhdr.edfsignals i++)
-  {
-    edfhdr.edfparam[i].buf_offset = n
-    if(edfhdr.bdf)  n += edfhdr.edfparam[i].smp_per_record * 3
-    else  n += edfhdr.edfparam[i].smp_per_record * 2
-
-    edfhdr.edfparam[i].bitvalue = (edfhdr.edfparam[i].phys_max - edfhdr.edfparam[i].phys_min) / (edfhdr.edfparam[i].dig_max - edfhdr.edfparam[i].dig_min)
-    edfhdr.edfparam[i].offset = edfhdr.edfparam[i].phys_max / edfhdr.edfparam[i].bitvalue - edfhdr.edfparam[i].dig_max
-  }
-
-  edfhdr.file_hdl = inputfile
-
-  free(edf_hdr)
-
-  return(edfhdr)
-}
+    for i in i: edfhdr.edfsignals
+        edfhdr.edfparam[i].buf_offset = n
+        n += edfhdr.edfparam[i].smp_per_record * edfhdr.bdf ? 3 : 2
+        edfhdr.edfparam[i].bitvalue = (edfhdr.edfparam[i].phys_max - edfhdr.edfparam[i].phys_min) /
+                                      (edfhdr.edfparam[i].dig_max - edfhdr.edfparam[i].dig_min)
+        edfhdr.edfparam[i].offset = edfhdr.edfparam[i].phys_max / edfhdr.edfparam[i].bitvalue -
+                                    edfhdr.edfparam[i].dig_max
+    end
+    edfhdr.file_hdl = inputfile
+    return edfhdr
+end
 
 
 
