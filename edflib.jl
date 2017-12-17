@@ -1,6 +1,9 @@
+#=
+Created on Dec 6 2015
+@author: Teunis van Buelin, C version; translation to Julia by William Herrera
+EEG file routines for EDF, BDF, EDF+, and BDF+ files
+=#
 #==============================================================================
-/*
-*****************************************************************************
 *
 * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Teunis van Beelen
 * All rights reserved.
@@ -26,10 +29,7 @@
 * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *
-*****************************************************************************
-*/
 =================================================================================#
-
 
 
 const EDFLIB_TIME_DIMENSION      =   10000000
