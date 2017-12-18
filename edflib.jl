@@ -31,8 +31,8 @@ EEG file routines for EDF, BDF, EDF+, and BDF+ files
 *
 =================================================================================#
 
-
-const EDFLIB_TIME_DIMENSION      =   10000000
+# we may want to replace this with a Float64 and no divisor??
+const EDFLIB_TIME_DIMENSION      =   10000000  # 100 nanosecond resolution??
 const EDFLIB_MAXSIGNALS =                 512
 const EDFLIB_MAX_ANNOTATION_LEN =         512
 
@@ -88,9 +88,9 @@ mutable struct EDFParam          # this structure contains all the relevant EDF-
 end
 
 mutable struct EDFAnnotation     # this structure is used for annotations
-    onset::Int64                 # onset time of the event, expressed in units of 100 nanoSeconds and relative to the starttime in the header
+    onset::Float64               # onset time of the event in seconds after stated start of file
     duration::String             # duration time, this is a null-terminated ASCII text-string
-    annotation::Array{String,1}  # (EDFLIB_MAX_ANNOTATION_LEN + 1) # description of the event in UTF-8, this is a null terminated string
+    annotation::String        }  # (EDFLIB_MAX_ANNOTATION_LEN + 1) # description of the event in UTF-8
 end
 
 mutable struct EDFHdr                     # this structure contains all the relevant EDF header info and will be filled when calling the function edf_open_file_readonly()
@@ -138,22 +138,23 @@ mutable struct EDFParamBlock
     physdimension::String
     phys_min::Float64
     phys_max::Float64
-    dig_min::Int32
-    dig_max::Int32
+    dig_min::Int
+    dig_max::Int
     prefilter::String
-    smp_per_record::Int16
+    smp_per_record::Int
     reserved::String
     offset::Float64
-    buf_offset::Int16
+    buf_offset::Int
     bitvalue::Float64
-    annotation::Int16
+    annotation::Int
     sample_pntr::Int64
+    EDFParamBlock() = new("","","",0.0,0.0,0,0,"",0,"",0.0,0,0.0,0,0)
 end
 
 mutable struct EDFHdrBlock
     file_hdl::IOBuffer
     path::String
-    writemode::Int16
+    writemode::Int
     version::String
     patient::String
     recording::String
@@ -168,55 +169,61 @@ mutable struct EDFHdrBlock
     plus_equipment::String
     plus_recording_additional::String
     l_starttime::Int64
-    startdate_day::Int16
-    startdate_month::Int16
-    startdate_year::Int16
-    starttime_second::Int16
-    starttime_minute::Int16
-    starttime_hour::Int16
+    startdate_day::Int
+    startdate_month::Int
+    startdate_year::Int
+    starttime_second::Int
+    starttime_minute::Int
+    starttime_hour::Int
     reserved::String
-    hdrsize::Int16
-    edfsignals::Int16
+    hdrsize::Int
+    edfsignals::Int
     datarecords::Int64
-    recordsize::Int16
-    annot_ch::Array{Int16,1}
-    nr_annot_chns::Int16
-    mapped_signals::Array{Int16,1}
-    edf::Int16
-    edfplus::Int16
-    bdf::Int16
-    bdfplus::Int16
-    discontinuous::Int16
-    signal_write_sequence_pos::Int16
+    recordsize::Int
+    annot_ch::Array{Int,1}
+    nr_annot_chns::Int
+    mapped_signals::Array{Int,1}
+    edf::Bool
+    edfplus::Bool
+    bdf::Bool
+    bdfplus::Bool
+    discontinuous::Bool
+    signal_write_sequence_pos::Int
     starttime_offset::Int64
     data_record_duration::Float64
     long_data_record_duration::Int64
-    annots_in_file::Int16
-    annotlist_sz::Int16
-    total_annot_bytes::Int16
-    eq_sf::Int16
+    annots_in_file::Int
+    annotlist_sz::Int
+    total_annot_bytes::Int
+    eq_sf::Int
     edfparam::EDFParamBlock
+    EDFHdrBlock() = new(IOBuffer(),"",0,"","","","","","","","","","","","","",
+                        0,0,0,0,0,0,0,"",0,0,0,0,zeros(Int,EDFLIB_MAXSIGNALS),0,
+                        zeros(Int,EDFLIB_MAXSIGNALS),false,false,false,false,
+                        0,0,0.0,0,0,0,0,0,EDFParamBlock())
 end
 
 
 mutable struct EDF_AnnotationBlock
-    onset::Int64
+    onset::Float64
     duration::String
     annotation::String
-    EDF_AnnotationBlock() = new(0,"","")
+    EDF_AnnotationBlock() = new(0.0,"","")
 end
-const annotationslist = Array{EDF_AnnotationBlock,1}(EDFLIB_MAXFILES)
+const annotationslist = Array{Array{EDF_AnnotationBlock,1},1}(EDFLIB_MAXFILES)
 
 
 mutable struct EDF_Write_AnnotationBlock
-    onset::Int64
-    duration::Int64
+    onset::Float64
+    duration::String
     annotation::String
-    EDF_WriteAnnotationBlock() = new(0,0,"")
+    EDF_WriteAnnotationBlock() = new(0.0,"","")
 end
-const write_annotationslist = Array{EDF_Write_AnnotationBlock,1}(EDFLIB_MAXFILES)
+const write_annotationslist = Array{Array{EDF_Write_AnnotationBlock,1},1}(EDFLIB_MAXFILES)
+
 
 const edf_files_open = 0
+
 
 const hdrlist = Array{EDFHdrBlock,1}(EDFLIB_MAXFILES)
 
@@ -843,11 +850,11 @@ edflib_check_edf_file(inputfile, edf_error)
             pdmaxpos = 257 + edfhdr.edfsignals * 128 + (i-1) * 8
             pblock.dig_max = parse(Float32, hdrbuf[pdmaxpos, pdmaxpos+8])  # digital maximum in above dimensions
             if edfhdr.edfplus && channellabel[1:16] != "EDF Annotations "
-                edfhdr.annot_ch[edfhdr.nr_annot_chns] = i-1
+                edfhdr.annot_ch[edfhdr.nr_annot_chns+1] = i
                 edfhdr.nr_annot_chns += 1
                 pblock.annotation = true
             elseif edfhdr.bdfplus && channellabel[1:16] != "BDF Annotations "
-                edfhdr.annot_ch[edfhdr.nr_annot_chns] = i-1
+                edfhdr.annot_ch[edfhdr.nr_annot_chns+1] = i
                 edfhdr.nr_annot_chns += 1
                 pblock.annotation = true
             end
@@ -892,22 +899,11 @@ edflib_check_edf_file(inputfile, edf_error)
                 end
             end
             startpos += 80
-            edfhdr.edfparam[i].smp_per_record = parse(Int, hdrbuf[startpos:startpos+8])
+            edfhdr.edfparam[i].smp_per_record = parse(Int, hdrbuf[startpos:startpos+8])  # samples per record
             if edfhdr.edfparam[i].smp_per_record < 1
                 throw("Samples per data record should be a positive integer")
             else
-                edfhdr.recordsize += n                          # edfhdr.recordsize is calculated
-                if edfhdr.bdf
-                    edfhdr.recordsize *= 3
-                    if edfhdr.recordsize > 1578640
-                        throw("record size too large for a bdf file")
-                    end
-                else
-                    edfhdr.recordsize *= 2
-                    if edfhdr.recordsize > 10485760
-                        throw("Record size too large for an edf file")
-                    end
-                end
+                edfhdr.recordsize += edfhdr.edfparam[i].smp_per_record   # edfhdr.recordsize is calculated
             end
             startpos += 8
             edfhdr.edfparam[i].reserved = convert(String, hdrbuf[startpos:startpos+32]) # reserved (ascii)
@@ -915,6 +911,21 @@ edflib_check_edf_file(inputfile, edf_error)
                 throw("bad bytes for reserved per-channel field")
             end
         end
+        if edfhdr.bdf
+            edfhdr.recordsize *= 3
+            if edfhdr.recordsize > 1578640
+                throw("record size too large for a bdf file")
+            else
+                edfhdr.recordsize *= 2
+                if edfhdr.recordsize > 10485760
+                    throw("Record size too large for an edf file")
+                end
+            end
+        end
+    catch:
+        edf_error[1] = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
+        return 0
+    end
 
     #=
     from https://www.edfplus.info/specs/edfplus.html#header, December 2017:
@@ -938,34 +949,35 @@ edflib_check_edf_file(inputfile, edf_error)
 
     Additional subfields may follow the ones described here.
     =#
-    if edfhdr.edfplus || edfhdr.bdfplus
-        subfield = split(edfhdr.patient)
-        if length(subfield) < 4
-            throw("Plus patient identification lacking enough fields")
-        end
-        edfhdr.plus_patientcode = subfield[1][1] == 'X' ? "" : subfield[1]
-        edfhdr.plus_patientcode = replace(edfhdr.plus_patientcode, "_", " ")
-        if subfield[2] != "M" && subfield[2] != "F" && subfield[2] != "X"
-            throw("patient identification second field must be X, F or M")
-        elseif subfield[2] == "M"
-            edfhdr.plus_gender = "Male"
-        elseif subfield[2] == "F"
-            edfhdr.plus_gender = "Female"
-        else
-            edfhdf.plus_gender = ""
-        end
-        if subfield[3] = "X"
-            edfhdr.plus_birthdate = ""
-        elseif !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[3][4:6])
-            || !(Date(subfield[3], "dd-uuu-yyyy") isa Date)
-            throw("Bad birthdate field in patient identification")
-        else
-            edfhdr.plus_birthdate = subfield[3]
-        end
-        edfhdr.plus_patient_name = replace(subfield[4], "_", " ")
-        if length(subfield > 4
-            edfhdr.plus_patient_additional = join(subfield[5:end], " ")
-        end
+    try
+        if edfhdr.edfplus || edfhdr.bdfplus
+            subfield = split(edfhdr.patient)
+            if length(subfield) < 4
+                throw("Plus patient identification lacking enough fields")
+            end
+            edfhdr.plus_patientcode = subfield[1][1] == 'X' ? "" : subfield[1]
+            edfhdr.plus_patientcode = replace(edfhdr.plus_patientcode, "_", " ")
+            if subfield[2] != "M" && subfield[2] != "F" && subfield[2] != "X"
+                throw("patient identification second field must be X, F or M")
+            elseif subfield[2] == "M"
+                edfhdr.plus_gender = "Male"
+            elseif subfield[2] == "F"
+                edfhdr.plus_gender = "Female"
+            else
+                edfhdf.plus_gender = ""
+            end
+            if subfield[3] = "X"
+                edfhdr.plus_birthdate = ""
+            elseif !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[3][4:6])
+                || !(Date(subfield[3], "dd-uuu-yyyy") isa Date)
+                throw("Bad birthdate field in patient identification")
+            else
+                edfhdr.plus_birthdate = subfield[3]
+            end
+            edfhdr.plus_patient_name = replace(subfield[4], "_", " ")
+            if length(subfield > 4
+                edfhdr.plus_patient_additional = join(subfield[5:end], " ")
+            end
     #=
      The 'local recording identification' field must start with the subfields
      (subfields do not contain, but are separated by, spaces):
@@ -983,43 +995,42 @@ edflib_check_edf_file(inputfile, edf_error)
      'local recording identification' field would start with:
      Startdate X X X X. Additional subfields may follow the ones described here.
     =#
-    subfield = split(edfhdr.recording)
-    if length(subfield) < 5
-        throw("Not enough fields in plus recording data")
-    elseif subfield[1] != "Startdate" || (subfield[2] != "X" &&
-             (!(dor = Date(subfield[2], "dd-uuu-yyyy") isa Date) ||
-              !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[2][4:6]))
-        throw("Bad recording field start")
-    else
-        if subfield[2] == "X"
-            edfhdr.plus_startdate = ""
-        else
-            edfhdr.plus_startdate = subfield[2]
-            if Dates.year(dor) < 1970
-                throw("bad startdate year in recording data")
+            subfield = split(edfhdr.recording)
+            if length(subfield) < 5
+                throw("Not enough fields in plus recording data")
+            elseif subfield[1] != "Startdate" || (subfield[2] != "X" &&
+                 (!(dor = Date(subfield[2], "dd-uuu-yyyy") isa Date) ||
+                  !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[2][4:6]))
+                throw("Bad recording field start")
+            elseif subfield[2] == "X"
+                edfhdr.plus_startdate = ""
             else
-                edfhdr.startdate_year = Dates.year(dor)
+                edfhdr.plus_startdate = subfield[2]
+                if Dates.year(dor) < 1970
+                    throw("bad startdate year in recording data")
+                else
+                    edfhdr.startdate_year = Dates.year(dor)
+                end
+            end
+            if subfield[3] == ""
+                edfhdr.plus.admincode = ""
+            else
+                edfhdr.plus_admincode = replace(subfield[3], "_", " ")
+            end
+            if subfield[4] == ""
+                edfhdr.plus_technician = ""
+            else
+                edfhdr.plus_technician = replace(subfield[4], "_", " ")
+            end
+            if subfield[5] == ""
+                edfhdr.plus.equipment = ""
+            else
+                edfhdr.plus_equipment = replace(subfield[5], "_", " ")
+            end
+            if length(subfield) > 5
+                edfhdr.plus_additional = replace(join(subfield[6:end], " "), "_", " ")
             end
         end
-        if subfield[3] == ""
-            edfhdr.plus.admincode = ""
-        else
-            edfhdr.plus_admincode = replace(subfield[3], "_", " ")
-        end
-        if subfield[4] == ""
-            edfhdr.plus_technician = ""
-        else
-            edfhdr.plus_technician = replace(subfield[4], "_", " ")
-        end
-        if subfield[5] == ""
-            edfhdr.plus.equipment = ""
-        else
-            edfhdr.plus_equipment = replace(subfield[5], "_", " ")
-        end
-        if length(subfield) > 5
-            edfhdr.plus_additional = replace(join(subfield[6:end], " "), "_", " ")
-        end
-    end
 
         edfhdr.hdrsize = edfhdr.edfsignals * 256 + 256
         filesize = filesize(edfhdr.path)   # get actual file size
@@ -1045,2390 +1056,632 @@ edflib_check_edf_file(inputfile, edf_error)
 end
 
 
+edflib_is_integer_number(str) = try parse(Int, str); 0 catch 1 end
+
+edflib_is_number(str) = try parse(Float64, str); 0 catch 1 end
+
+edflib_get_long_duration(str) = try x = parse(Float64, str); x catch NaN end
+
+edflib_version() = EDFLIB_VERSION
 
 
-static int edflib_is_integer_number(char *str)
-{
-  int i=0, l, hasspace = 0, hassign=0, digit=0
+edflib_get_annotations(edfhdr, hdl, read_annotations)
+    inputfile = edfhdr.file_hdl
+    edfsignals = edfhdr.edfsignals
+    recordsize = edfhdr.recordsize
+    edfparam = edfhdr.edfparam
+    nr_annot_chns = edfhdr.nr_annot_chns
+    datarecords = edfhdr.datarecords
+    data_record_duration = edfhdr.long_data_record_duration
+    discontinuous = edfhdr.discontinuous
+    annot_ch = edfhdr.annot_ch
+    samplesize = edfhdr.edfplus ? 2 : (edfhdr.bdfplus ? 3: 1)
 
-  l = strlen(str)
+    max_tal_ln = 0
+    for i in 1:nr_annot_chns
+        if max_tal_ln < edfparam[annot_ch[i]].smp_per_record * samplesize
+        max_tal_ln = edfparam[annot_ch[i]].smp_per_record * samplesize
+    end
+    max_tal_ln = max_tal_ln < 128 ? 128 :  max_tal_ln
 
-  if(!l)  return(1)
+    seek(inputfile, (edfsignals + 1) * 256))
+    elapsedtime = 0
+    for i in 1:datarecords
+        try
+            cnvbuf = read(inputfile, UInt8, recordsize)
+            #  process annotationsignals (if any)
+            for j in 1:nr_annot_chns
+                annotbuf = convert(string, cvnbuf[edfparam[annot_ch[j]].buf_offset + 1:
+                                                  edfparam[annot_ch[j]].buf_offset +
+                                                  edfparam[annot_ch[j]].smp_per_record * samplesize])
+                for (k, tal) in enumerate(split(annotbuf, "\x00"))
+                    onset = 0.0
+                    duration = ""
+                    for annot in split(tal, "\x14")
+                        if k == 1  # first record should be a timekeeping signal
+                            if j == 1 # first annotation signal's first annotation record
+                                offsettimestr = match(annot, r"^(\d+)").captures[1]
+                                edfhdr.starttime_offset = parse(Int, offsettimestr)
+                            else
+                                if length(tsignal = split(annot, "\x15")) > 1
+                                    onset = convert(Float64, tsignal[1])
+                                    duration = convert(String, tsignal[2])
+                                else
+                                    onset = convert(Float64, tsignal[1])
+                                end
+                            end
+                        else
+                            newannot = EDF_AnnotationBlock(onset, duration, convert(String, annot))
+                            push!(annotationslist[hdl], newannot)
+                            edfhdr.annots_in_file += 1
+                            edfhdr->annotlist_sz += EDFLIB_ANNOT_MEMBLOCKSZ
+                        end
+                    end
+                end
+            end
+        catch
+            return 9
+        end
+    end
+    return 0
+end
 
-  if((str[0]=='+')||(str[0]=='-'))
-  {
-    hassign++
-    i++
-  }
 
-  for( i<l i++)
-  {
-    if(str[i]==' ')
-    {
-      if(!digit)
-      {
-        return(1)
-      }
-      hasspace++
-    }
+edfopen_file_writeonly(path, filetype, number_of_signals)
+    if filetype != EDFLIB_FILETYPE_EDFPLUS && filetype != EDFLIB_FILETYPE_BDFPLUS
+        return(EDFLIB_FILETYPE_ERROR)
+    end
+    if edf_files_open >= EDFLIB_MAXFILES
+        return EDFLIB_MAXFILES_REACHED
+    end
+    for i in 1:EDFLIB_MAXFILES
+        if hdrlist[i] != 0 && path == hdrlist[i].path
+            return EDFLIB_FILE_ALREADY_OPENED
+        end
+    end
+    if number_of_signals < 0
+        return EDFLIB_NUMBER_OF_SIGNALS_INVALID
+    end
+    if number_of_signals>EDFLIB_MAXSIGNALS
+        return EDFLIB_NUMBER_OF_SIGNALS_INVALID
+    end
+
+    hdr = EDFHdrBlock()
+    hdr.writemode = 1
+    hdr.edfsignals = number_of_signals
+    handle = -1
+    for i in i:EDFLIB_MAXFILES
+        if hdrlist[i] == 0
+            hdrlist[i] = hdr
+            handle = i
+            break
+        end
+    end
+    if handle < 0
+        return EDFLIB_MAXFILES_REACHED
+    end
+    write_annotationslist[handle] = 0
+    hdr.annotlist_sz = 0
+    hdr.annots_in_file = 0
+    try
+        file = open(path, "w")
+    catch
+        return EDFLIB_NO_SUCH_FILE_OR_DIRECTORY
+    end
+    hdr.file_hdl = file
+    hdr.path = path
+    edf_files_open += 1
+    if filetype == EDFLIB_FILETYPE_EDFPLUS
+        hdr.edf = true
+        hdr.edfplus = true
+    end
+    if filetype == EDFLIB_FILETYPE_BDFPLUS
+        hdr.bdf = true
+        hdr.bdfplus = true
+    end
+    hdr.long_data_record_duration = EDFLIB_TIME_DIMENSION
+    hdr.data_record_duration = 1.0
+    hdr.nr_annot_chns = 1
+    return handle
+end
+
+
+edf_set_samplefrequency(handle, edfsignal, samplefrequency)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode || edfsignal < 0 ||
+       edfsignal >= hdrlist[handle].edfsignals || samplefrequency < 1 ||
+       hdrlist[handle].datarecords == 0)
+        return -1
+    end
+    hdrlist[handle].edfparam[edfsignal].smp_per_record = samplefrequency
+    return 0
+end
+
+
+edf_set_number_of_annotation_signals(handle, annot_signals)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode ||  hdrlist[handle].datarecords == 0 ||
+       (annot_signals < 1) || (annot_signals > 64)
+        return -1
+    end
+    hdrlist[handle].nr_annot_chns = annot_signals
+    return 0
+end
+
+
+# ?? need to know the units here
+edf_set_datarecord_duration(handle, duration)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode ||  hdrlist[handle].datarecords == 0 ||
+       (duration < 100) || (duration > 6000000)
+        return -1
+    end
+    hdrlist[handle].long_data_record_duration = duration * 100
+    if hdrlist[handle].long_data_record_duration < EDFLIB_TIME_DIMENSION * 10
+        hdrlist[handle].long_data_record_duration /= 10
+        hdrlist[handle].long_data_record_duration *= 10
     else
-    {
-      if((str[i]<48)||(str[i]>57))
-      {
-        return(1)
-      }
-      else
-      {
-        if(hasspace)
-        {
-          return(1)
-        }
-        digit++
-      }
-    }
-  }
-
-  if(digit)  return(0)
-  else  return(1)
-}
+        hdrlist[handle].long_data_record_duration /= 100LL
+        hdrlist[handle].long_data_record_duration *= 100LL
+    end
+    hdrlist[handle].data_record_duration = Float64(hdrlist[handle].long_data_record_duration) /
+                                                   EDFLIB_TIME_DIMENSION
+    return 0
+end
 
 
+edfwrite_digital_short_samples(handle, buf::Array{Int16,1})
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode ||  hdrlist[handle].edfsignals == 0 ||
+       hdrlist[handle].bdf == 1
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignal = hdr.signal_write_sequence_pos
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if(error)
+            return error
+       end
+    end
+    sf = hdr.edfparam[edfsignal].smp_per_record
+    digmax = hdr.edfparam[edfsignal].dig_max
+    digmin = hdr.edfparam[edfsignal].dig_min
+    try
+        for i in 1:sf
+            value = buf[i] > digmax ? digmax : buf[i]
+            value = value<digmin ? digmin : value
+            byteswritten += write(file, UInt8(value & 0xff))
+            if hdr.bdf
+                byteswritten += write(file, (value>>16 & 0xff))
+            end
+        end
+        hdr.signal_write_sequence_pos += 1
+        if hdr.signal_write_sequence_pos == hdr.edfsignals
+            hdr.signal_write_sequence_pos = 0
+            byteswritten = edflib_fprint_Int64_number_nonlocalized(file,
+                            (hdr.datarecords * hdr.long_data_record_duration) /
+                             EDFLIB_TIME_DIMENSION, 0, 1)
+            if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION > 0
+                byteswritten += write(file, '.')
+                byteswritten += edflib_fprint_Int64_number_nonlocalized(file,
+                                (hdr.datarecords * hdr.long_data_record_duration)
+                                 % EDFLIB_TIME_DIMENSION, 7, 0)
+            end
+            byteswritten += write(file, UInt8(20))
+            byteswritten += write(file, UInt8(20))
+            write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+            hdr.datarecords += 1
+            flush(file)
+        end
+     catch
+        return -1
+     end
+     return 0
+end
 
-static int edflib_is_number(char *str)
-{
-  int i=0, l, hasspace = 0, hassign=0, digit=0, hasdot=0, hasexp=0
 
-  l = strlen(str)
+edfwrite_digital_samples(handle, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode ||  hdrlist[handle].edfsignals == 0
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignal = hdr.signal_write_sequence_pos
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if error
+            return(error)
+        end
+    end
+    sf = hdr.edfparam[edfsignal].smp_per_record
+    digmax = hdr.edfparam[edfsignal].dig_max
+    digmin = hdr.edfparam[edfsignal].dig_min
+    try
+        for i in 1:sf
+            value = buf[i] > digmax ? digmax : buf[i]
+            value = value < digmin ? digmin : value
+            byteswritten += write(file, UInt8(value & 0xff))
+            byteswritten += write(file, UInt8((value >> 8) &0xff))
+            if hdr.bdf
+                byteswritten += write(file, UInt8((value>>16) & 0xff))
+            end
+        end
+        hdr.signal_write_sequence_pos += 1
+        if hdr.signal_write_sequence_pos == hdr.edfsignals
+            hdr.signal_write_sequence_pos = 0
+            byteswritten = edflib_fprint_Int64_number_nonlocalized(file,
+                          (hdr.datarecords * hdr.long_data_record_duration) /
+                          EDFLIB_TIME_DIMENSION, 0, 1)
+            if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION > 0
+                byteswritten += write(file, '.')
+                byteswritten += edflib_fprint_Int64_number_nonlocalized(file,
+                             (hdr.datarecords * hdr.long_data_record_duration)
+                             % EDFLIB_TIME_DIMENSION, 7, 0)
+            end
+            byteswritten += write(file, UInt8(20))
+            byteswritten += write(file, UInt8(20))
+            write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+            hdr.datarecords += 1
+            flush(file)
+        end
+    catch
+        return -1
+    end
+    return 0
+end
 
-  if(!l)  return(1)
 
-  if((str[0]=='+')||(str[0]=='-'))
-  {
-    hassign++
-    i++
-  }
+edf_blockwrite_digital_samples(handle, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode|| hdrlist[handle].signal_write_sequence_pos != 0 ||
+        hdrlist[handle].edfsignals == 0
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignals = hdr.edfsignals
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if error
+            return(error)
+        end
+    end
+    buf_offset = 0
+    try
+        for j in 1:edfsignals
+            sf = hdr.edfparam[j].smp_per_record
+            digmax = hdr.edfparam[j].dig_max
+            digmin = hdr.edfparam[j].dig_min
+            for i in 1:sf
+                value = buf[i+buf_offset] > digmax ? digmax : buf[i+buf_offset]
+                value = value < digmin ? digmin : value
+                byteswritten += write(file, UInt8(value & 0xff))
+                byteswritten += write(file, UInt8((value >> 8) &0xff))
+                if hdr.bdf
+                    byteswritten += write(file, UInt8((value>>16) & 0xff))
+                end
+            end
+            buf_offset += sf
+        end
+        hdr.signal_write_sequence_pos += 1
+        if hdr.signal_write_sequence_pos == hdr.edfsignals
+            hdr.signal_write_sequence_pos = 0
+            byteswritten = edflib_fprint_Int64_number_nonlocalized(file,
+                          (hdr.datarecords * hdr.long_data_record_duration) /
+                          EDFLIB_TIME_DIMENSION, 0, 1)
+            if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION > 0
+                byteswritten += write(file, '.')
+                byteswritten += edflib_fprint_Int64_number_nonlocalized(file,
+                             (hdr.datarecords * hdr.long_data_record_duration)
+                             % EDFLIB_TIME_DIMENSION, 7, 0)
+            end
+            byteswritten += write(file, UInt8(20))
+            byteswritten += write(file, UInt8(20))
+            write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+            hdr.datarecords += 1
+            flush(file)
+        end
+    catch
+        return -1
+    end
+    return 0
+end
 
-  for( i<l i++)
-  {
-    if((str[i]=='e')||(str[i]=='E'))
-    {
-      if((!digit)||hasexp)
-      {
-        return(1)
-      }
-      hasexp++
-      hassign = 0
-      digit = 0
 
-      break
-    }
+edf_blockwrite_digital_short_samples(handle, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode|| hdrlist[handle].signal_write_sequence_pos != 0 ||
+        hdrlist[handle].edfsignals == 0 || hdrlist[handle].bdf == 1
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignals = hdr.edfsignals
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if error
+            return(error)
+        end
+    end
+    buf_offset = 0
+    try
+        for j in 1:edfsignals
+            sf = hdr.edfparam[j].smp_per_record
+            digmax = hdr.edfparam[j].dig_max
+            digmin = hdr.edfparam[j].dig_min
+            for i in 1:sf
+                value = buf[i+buf_offset] > digmax ? digmax : buf[i+buf_offset]
+                value = value < digmin ? digmin : value
+                byteswritten += write(file, UInt8(value & 0xff))
+                byteswritten += write(file, UInt8((value >> 8) &0xff))
+                if hdr.bdf
+                    byteswritten += write(file, UInt8((value>>16) & 0xff))
+                end
+            end
+            buf_offset += sf
+        end
+        byteswritten = edflib_fprint_Int64_number_nonlocalized(file,
+                       (hdr.datarecords * hdr.long_data_record_duration) /
+                       EDFLIB_TIME_DIMENSION, 0, 1)
+        if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION > 0
+            byteswritten += write(file, '.')
+            byteswritten += edflib_fprint_Int64_number_nonlocalized(file,
+                         (hdr.datarecords * hdr.long_data_record_duration)
+                         % EDFLIB_TIME_DIMENSION, 7, 0)
+        end
+        byteswritten += write(file, UInt8(20))
+        byteswritten += write(file, UInt8(20))
+        write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+        hdr.datarecords += 1
+        flush(file)
+    catch
+        return -1
+    end
+    return 0
+end
 
-    if(str[i]==' ')
-    {
-      if(!digit)
-      {
-        return(1)
-      }
-      hasspace++
-    }
+
+edf_blockwrite_digital_3byte_samples(handle, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode|| hdrlist[handle].signal_write_sequence_pos != 0 ||
+        hdrlist[handle].edfsignals == 0 || hdrlist[handle].bdf != 1
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignals = hdr.edfsignals
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if error
+            return(error)
+        end
+    end
+    buf_offset = 0
+    try
+        for j in 1:edfsignals
+            total_samples += hdr.edfparam[j].smp_per_record
+        end
+        
+        if write(file, Array{UInt8,1}(buf), totalsamples*3) != totalsamples*3
+            throw("Bad write")
+        end
+        
+        byteswritten = edflib_fprint_Int64_number_nonlocalized(file,
+                       (hdr.datarecords * hdr.long_data_record_duration) /
+                       EDFLIB_TIME_DIMENSION, 0, 1)
+        if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION > 0
+            byteswritten += write(file, '.')
+            byteswritten += edflib_fprint_Int64_number_nonlocalized(file,
+                         (hdr.datarecords * hdr.long_data_record_duration)
+                         % EDFLIB_TIME_DIMENSION, 7, 0)
+        end
+        byteswritten += write(file, UInt8(20))
+        byteswritten += write(file, UInt8(20))
+        write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+        hdr.datarecords += 1
+        flush(file)
+    catch
+        return -1
+    end
+    return 0
+end
+
+
+edfwrite_physical_samples(handle, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode|| hdrlist[handle].edfsignals == 0
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignal = hdr.signal_write_sequence_pos
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if error
+            return(error)
+        end
+    end
+    sf = hdr.edfparam[edfsignal].smp_per_record
+    digmax = hdr.edfparam[edfsignal].dig_max
+    digmin = hdr.edfparam[edfsignal].dig_min
+    bitvalue = hdr.edfparam[edfsignal].bitvalue
+    phys_offset = hdr.edfparam[edfsignal].offset
+
+    try
+        for i in 1:sf
+            value = (buf[i] / bitvalue) - phys_offset
+            if value > digmax
+                value = digmax
+            elseif value<digmin
+                value = digmin
+            end
+            write(file, UInt8(value & 0xff))
+            write(file, UInt8((value>>8)&0xff))
+            if hdr.bdf
+                write(file, UInt8((value >> 16) & 0xff))
+            end
+        end
+        hdr.signal_write_sequence_pos += 1
+        if hdr.signal_write_sequence_pos == hdr.edfsignals
+            hdr.signal_write_sequence_pos = 0
+        byteswritten = edflib_fprint_Int64_number_nonlocalized(file, 
+                       (hdr.datarecords * hdr.long_data_record_duration) / 
+                                EDFLIB_TIME_DIMENSION, 0, 1)
+        if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION
+             byteswritten += write(file, '.')
+             byteswritten += edflib_fprint_Int64_number_nonlocalized(file, 
+                   (hdr.datarecords * hdr.long_data_record_duration) % 
+                   EDFLIB_TIME_DIMENSION, 7, 0)
+        end
+        byteswritten += write(file, UInt8(20))
+        byteswritten += write(file, UInt8(20))
+        write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+        hdr.datarecords += 1
+        flush(file)
+    catch
+        return -1
+    end
+    return 0
+end
+
+
+edf_blockwrite_physical_samples(handle, buf)
+    if handle < 0 || handle >= EDFLIB_MAXFILES || hdrlist[handle] == 0 ||
+       !hdrlist[handle].writemode|| hdrlist[handle].edfsignals == 0 ||
+       hdrlist[handle].signal_write_sequence_pos != 0
+        return -1
+    end
+    hdr = hdrlist[handle]
+    file = hdr.file_hdl
+    edfsignals = hdr.edfsignals
+    if hdr.datarecords == 0 && edfsignal == 0
+        error = edflib_write_edf_header(hdr)
+        if error
+            return(error)
+        end
+    end
+
+    buf_offset = 0
+
+    try
+        for j in 1:edfsignals
+            sf = hdr.edfparam[j].smp_per_record
+            digmax = hdr.edfparam[j].dig_max
+            digmin = hdr.edfparam[j].dig_min
+            bitvalue = hdr.edfparam[j].bitvalue
+            phys_offset = hdr.edfparam[j].offset
+            for i in 1:sf
+                value = (buf[i] / bitvalue) - phys_offset
+                if value > digmax
+                    value = digmax
+                elseif value<digmin
+                    value = digmin
+                end
+            write(file, UInt8(value & 0xff))
+            write(file, UInt8((value>>8)&0xff))
+            if hdr.bdf
+                write(file, UInt8((value >> 16) & 0xff))
+            end
+            buf_offset += sf
+        end
+        byteswritten = edflib_fprint_Int64_number_nonlocalized(file, 
+                       (hdr.datarecords * hdr.long_data_record_duration) / 
+                                EDFLIB_TIME_DIMENSION, 0, 1)
+        if hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION
+             byteswritten += write(file, '.')
+             byteswritten += edflib_fprint_Int64_number_nonlocalized(file, 
+                   (hdr.datarecords * hdr.long_data_record_duration) % 
+                   EDFLIB_TIME_DIMENSION, 7, 0)
+        end
+        byteswritten += write(file, UInt8(20))
+        byteswritten += write(file, UInt8(20))
+        write(file, zeros(UInt8, hdr->total_annot_bytes - byteswritten))
+        hdr.datarecords += 1
+        flush(file)
+    catch
+        return -1
+    end
+    return 0
+end
+
+
+edflib_write_edf_header(hdr::EDFHdrBlock)
+    file = hdr.file_hdl
+    edfsignals = hdr.edfsignals
+    if edfsignals < 0
+        return -20
+    elseif edfsignals > EDFLIB_MAXSIGNALS
+        return -21
+    end
+    hdr.eq_sf = 1
+    for i in 1:edfsignals
+        if hdr.edfparam[i].smp_per_record < 1
+            return -22
+        elseif hdr.edfparam[i].dig_max == hdr.edfparam[i].dig_min
+            return -23
+        elseif hdr.edfparam[i].dig_max < hdr.edfparam[i].dig_min
+            return -24
+        elseif hdr.edfparam[i].phys_max == hdr.edfparam[i].phys_min
+            return(-25)
+        elseif i > 0 && hdr.edfparam[i].smp_per_record != hdr.edfparam[i-1].smp_per_record
+            hdr.eq_sf = 0
+        end
+    end
+    for i in 1:edfsignals
+        hdr.edfparam[i].bitvalue = (hdr.edfparam[i].phys_max - hdr.edfparam[i].phys_min) /                                    
+                                   (hdr.edfparam[i].dig_max - hdr.edfparam[i].dig_min)
+        hdr.edfparam[i].offset = hdr.edfparam[i].phys_max / 
+                                 hdr.edfparam[i].bitvalue - hdr.edfparam[i].dig_max
+    end
+    rewind(file)
+    if(hdr.edf)
+        write(file, "0       ")
     else
-    {
-      if(((str[i]<48)||(str[i]>57))&&str[i]!='.')
-      {
-        return(1)
-      }
-      else
-      {
-        if(hasspace)
-        {
-          return(1)
-        }
-        if(str[i]=='.')
-        {
-          if(hasdot)  return(1)
-          hasdot++
-        }
-        else
-        {
-          digit++
-        }
-      }
-    }
-  }
-
-  if(hasexp)
-  {
-    if(++i==l)
-    {
-      return(1)
-    }
-
-    if((str[i]=='+')||(str[i]=='-'))
-    {
-      hassign++
-      i++
-    }
-
-    for( i<l i++)
-    {
-      if(str[i]==' ')
-      {
-        if(!digit)
-        {
-          return(1)
-        }
-        hasspace++
-      }
-      else
-      {
-        if((str[i]<48)||(str[i]>57))
-        {
-          return(1)
-        }
-        else
-        {
-          if(hasspace)
-          {
-            return(1)
-          }
-
-          digit++
-        }
-      }
-    }
-  }
-
-  if(digit)  return(0)
-  else  return(1)
-}
-
-
-static long long edflib_get_long_duration(char *str)
-{
-  int i, len=8, hasdot=0, dotposition=0
-
-  long long value=0, radix
-
-  if((str[0] == '+') || (str[0] == '-'))
-  {
-    for(i=0 i<7 i++)
-    {
-      str[i] = str[i+1]
-    }
-
-    str[7] = ' '
-  }
-
-  for(i=0 i<8 i++)
-  {
-    if(str[i]==' ')
-    {
-      len = i
-      break
-    }
-  }
-
-  for(i=0 i<len i++)
-  {
-    if(str[i]=='.')
-    {
-      hasdot = 1
-      dotposition = i
-      break
-    }
-  }
-
-  if(hasdot)
-  {
-    radix = EDFLIB_TIME_DIMENSION
-
-    for(i=dotposition-1 i>=0 i--)
-    {
-        value += ((long long)(str[i] - 48)) * radix
-        radix *= 10
-    }
-
-    radix = EDFLIB_TIME_DIMENSION / 10
-
-    for(i=dotposition+1 i<len i++)
-    {
-        value += ((long long)(str[i] - 48)) * radix
-        radix /= 10
-    }
-  }
-  else
-  {
-    radix = EDFLIB_TIME_DIMENSION
-
-    for(i=len-1 i>=0 i--)
-    {
-        value += ((long long)(str[i] - 48)) * radix
-        radix *= 10
-    }
-  }
-
-  return(value)
-}
-
-
-int edflib_version(void)
-{
-  return(EDFLIB_VERSION)
-}
-
-
-static int edflib_get_annotations(struct edfhdrblock *edfhdr, int hdl, int read_annotations)
-{
-  int i, j, k, p, r=0, n,
-      edfsignals,
-      datarecords,
-      recordsize,
-      discontinuous,
-      *annot_ch,
-      nr_annot_chns,
-      max,
-      onset,
-      duration,
-      duration_start,
-      zero,
-      max_tal_ln,
-      error,
-      annots_in_record,
-      annots_in_tal,
-      samplesize=2
-
-  char *scratchpad,
-       *cnv_buf,
-       *time_in_txt,
-       *duration_in_txt
-
-
-  long long data_record_duration,
-            elapsedtime,
-            time_tmp=0
-
-  FILE *inputfile
-
-  struct edfparamblock *edfparam
-
-  struct edf_annotationblock *new_annotation=NULL,
-                             *malloc_list
-
-  inputfile = edfhdr.file_hdl
-  edfsignals = edfhdr.edfsignals
-  recordsize = edfhdr.recordsize
-  edfparam = edfhdr.edfparam
-  nr_annot_chns = edfhdr.nr_annot_chns
-  datarecords = edfhdr.datarecords
-  data_record_duration = edfhdr.long_data_record_duration
-  discontinuous = edfhdr.discontinuous
-  annot_ch = edfhdr.annot_ch
-
-  if(edfhdr.edfplus)
-  {
-    samplesize = 2
-  }
-  if(edfhdr.bdfplus)
-  {
-    samplesize = 3
-  }
-
-  cnv_buf = (char *)calloc(1, recordsize)
-  if(cnv_buf==NULL)
-  {
-    return(1)
-  }
-
-  max_tal_ln = 0
-
-  for(i=0 i<nr_annot_chns i++)
-  {
-    if(max_tal_ln<edfparam[annot_ch[i]].smp_per_record * samplesize)  max_tal_ln = edfparam[annot_ch[i]].smp_per_record * samplesize
-  }
-
-  if(max_tal_ln<128)  max_tal_ln = 128
-
-  scratchpad = (char *)calloc(1, max_tal_ln + 3)
-  if(scratchpad==NULL)
-  {
-    free(cnv_buf)
-    return(1)
-  }
-
-  time_in_txt = (char *)calloc(1, max_tal_ln + 3)
-  if(time_in_txt==NULL)
-  {
-    free(cnv_buf)
-    free(scratchpad)
-    return(1)
-  }
-
-  duration_in_txt = (char *)calloc(1, max_tal_ln + 3)
-  if(duration_in_txt==NULL)
-  {
-    free(cnv_buf)
-    free(scratchpad)
-    free(time_in_txt)
-    return(1)
-  }
-
-  if(fseeko(inputfile, (long long)((edfsignals + 1) * 256), SEEK_SET))
-  {
-    free(cnv_buf)
-    free(scratchpad)
-    free(time_in_txt)
-    free(duration_in_txt)
-    return(2)
-  }
-
-  elapsedtime = 0
-
-  for(i=0 i<datarecords i++)
-  {
-    if(fread(cnv_buf, recordsize, 1, inputfile)!=1)
-    {
-      free(cnv_buf)
-      free(scratchpad)
-      free(time_in_txt)
-      free(duration_in_txt)
-      return(2)
-    }
-
-
-/************** process annotationsignals (if any) **************/
-
-    error = 0
-
-    for(r=0 r<nr_annot_chns r++)
-    {
-      n = 0
-      zero = 0
-      onset = 0
-      duration = 0
-      duration_start = 0
-      scratchpad[0] = 0
-      annots_in_tal = 0
-      annots_in_record = 0
-
-      p = edfparam[annot_ch[r]].buf_offset
-      max = edfparam[annot_ch[r]].smp_per_record * samplesize
-
-/************** process one annotation signal ****************/
-
-      if(cnv_buf[p + max - 1]!=0)
-      {
-        error = 5
-        goto END
-      }
-
-      if(!r)  /* if it's the first annotation signal, then check */
-      {       /* the timekeeping annotation */
-        error = 1
-
-        for(k=0 k<(max-2) k++)
-        {
-          scratchpad[k] = cnv_buf[p + k]
-
-          if(scratchpad[k]==20)
-          {
-            if(cnv_buf[p + k + 1]!=20)
-            {
-              error = 6
-              goto END
-            }
-            scratchpad[k] = 0
-            if(edflib_is_onset_number(scratchpad))
-            {
-              error = 36
-              goto END
-            }
-            else
-            {
-              time_tmp = edflib_get_long_time(scratchpad)
-              if(i)
-              {
-                if(discontinuous)
-                {
-                  if((time_tmp-elapsedtime)<data_record_duration)
-                  {
-                    error = 4
-                    goto END
-                  }
-                }
-                else
-                {
-                  if((time_tmp-elapsedtime)!=data_record_duration)
-                  {
-                    error = 3
-                    goto END
-                  }
-                }
-              }
-              else
-              {
-                if(time_tmp>=EDFLIB_TIME_DIMENSION)
-                {
-                  error = 2
-                  goto END
-                }
-                else
-                {
-                  edfhdr.starttime_offset = time_tmp
-                }
-              }
-              elapsedtime = time_tmp
-              error = 0
-              break
-            }
-          }
-        }
-      }
-
-      for(k=0 k<max k++)
-      {
-        scratchpad[n] = cnv_buf[p + k]
-
-        if(!scratchpad[n])
-        {
-          if(!zero)
-          {
-            if(k)
-            {
-              if(cnv_buf[p + k - 1]!=20)
-              {
-                error = 33
-                goto END
-              }
-            }
-            n = 0
-            onset = 0
-            duration = 0
-            duration_start = 0
-            scratchpad[0] = 0
-            annots_in_tal = 0
-          }
-          zero++
-          continue
-        }
-        if(zero>1)
-        {
-          error = 34
-          goto END
-        }
-        zero = 0
-
-        if((scratchpad[n]==20)||(scratchpad[n]==21))
-        {
-          if(scratchpad[n]==21)
-          {
-            if(duration||duration_start||onset||annots_in_tal)
-            {               /* it's not allowed to have multiple duration fields */
-              error = 35   /* in one TAL or to have a duration field which is   */
-              goto END     /* not immediately behind the onsetfield             */
-            }
-            duration_start = 1
-          }
-
-          if((scratchpad[n]==20)&&onset&&(!duration_start))
-          {
-            if(r||annots_in_record)
-            {
-              if(n >= 0)
-              {
-                if(edfhdr.annots_in_file >= edfhdr.annotlist_sz)
-                {
-                  malloc_list = (struct edf_annotationblock *)realloc(annotationslist[hdl],
-                                                                      sizeof(struct edf_annotationblock) * (edfhdr.annotlist_sz + EDFLIB_ANNOT_MEMBLOCKSZ))
-                  if(malloc_list==NULL)
-                  {
-                    free(cnv_buf)
-                    free(scratchpad)
-                    free(time_in_txt)
-                    free(duration_in_txt)
-                    return(-1)
-                  }
-
-                  annotationslist[hdl] = malloc_list
-
-                  edfhdr.annotlist_sz += EDFLIB_ANNOT_MEMBLOCKSZ
-                }
-
-                new_annotation = annotationslist[hdl] + edfhdr.annots_in_file
-
-                new_annotation.annotation[0] = 0
-
-                if(duration)  strcpy(new_annotation.duration, duration_in_txt)
-                else  new_annotation.duration[0] = 0
-
-                for(j=0 j<n j++)
-                {
-                  if(j==EDFLIB_MAX_ANNOTATION_LEN)  break
-                  new_annotation.annotation[j] = scratchpad[j]
-                }
-                new_annotation.annotation[j] = 0
-
-                new_annotation.onset = edflib_get_long_time(time_in_txt)
-
-                edfhdr.annots_in_file++
-
-                if(read_annotations==EDFLIB_READ_ANNOTATIONS)
-                {
-                  if(!(strncmp(new_annotation.annotation, "Recording ends", 14)))
-                  {
-                    if(nr_annot_chns==1)
-                    {
-                      goto END
-                    }
-                  }
-                }
-              }
-            }
-
-            annots_in_tal++
-            annots_in_record++
-            n = 0
-            continue
-          }
-
-          if(!onset)
-          {
-            scratchpad[n] = 0
-            if(edflib_is_onset_number(scratchpad))
-            {
-              error = 36
-              goto END
-            }
-            onset = 1
-            n = 0
-            strcpy(time_in_txt, scratchpad)
-            continue
-          }
-
-          if(duration_start)
-          {
-            scratchpad[n] = 0
-            if(edflib_is_duration_number(scratchpad))
-            {
-              error = 37
-              goto END
-            }
-
-            for(j=0 j<n j++)
-            {
-              if(j==15)  break
-              duration_in_txt[j] = scratchpad[j]
-              if((duration_in_txt[j]<32)||(duration_in_txt[j]>126))
-              {
-                duration_in_txt[j] = '.'
-              }
-            }
-            duration_in_txt[j] = 0
-
-            duration = 1
-            duration_start = 0
-            n = 0
-            continue
-          }
-        }
-
-        n++
-      }
-
- END:
-
-/****************** end ************************/
-
-      if(error)
-      {
-        free(cnv_buf)
-        free(scratchpad)
-        free(time_in_txt)
-        free(duration_in_txt)
-        return(9)
-      }
-    }
-  }
-
-  free(cnv_buf)
-  free(scratchpad)
-  free(time_in_txt)
-  free(duration_in_txt)
-
-  return(0)
-}
-
-
-static int edflib_is_duration_number(char *str)
-{
-  int i, l, hasdot = 0
-
-  l = strlen(str)
-
-  if(!l)  return(1)
-
-  if((str[0] == '.')||(str[l-1] == '.'))  return(1)
-
-  for(i=0 i<l i++)
-  {
-    if(str[i]=='.')
-    {
-      if(hasdot)  return(1)
-      hasdot++
-    }
+        write(file, b"\xffBIOSEMI")
+    end
+    pidbytes = hdr.plus_patientcode = "" ? "X " : replace(hdr.plus_patientcode, " ", "_") * " "
+    end
+    if hdr.plus_gender[1] == 'M'
+        pidbytes *= "M "
+    elseif hdr.plus_gender[1] == 'F'
+        pidbytes *= "F "
     else
-    {
-      if((str[i]<48)||(str[i]>57))  return(1)
-    }
-  }
-
-  return(0)
-}
-
-
-
-static int edflib_is_onset_number(char *str)
-{
-  int i, l, hasdot = 0
-
-  l = strlen(str)
-
-  if(l<2)  return(1)
-
-  if((str[0]!='+')&&(str[0]!='-'))  return(1)
-
-  if((str[1] == '.')||(str[l-1] == '.'))  return(1)
-
-  for(i=1 i<l i++)
-  {
-    if(str[i]=='.')
-    {
-      if(hasdot)  return(1)
-      hasdot++
-    }
+        pidbytes *= "X "
+    end
+    if hdr.plus_birthdate != ""
+        pidbytes += write(file, "X ")
     else
-    {
-      if((str[i]<48)||(str[i]>57))  return(1)
-    }
-  }
-
-  return(0)
-}
-
-
-
-static long long edflib_get_long_time(char *str)
-{
-  int i, len, hasdot=0, dotposition=0
-
-  long long value=0, radix
-
-  str = str + 1
-
-  len = strlen(str)
-
-  for(i=0 i<len i++)
-  {
-    if(str[i]=='.')
-    {
-      hasdot = 1
-      dotposition = i
-      break
-    }
-  }
-
-  if(hasdot)
-  {
-    radix = EDFLIB_TIME_DIMENSION
-
-    for(i=dotposition-1 i>=0 i--)
-    {
-        value += ((long long)(str[i] - 48)) * radix
-        radix *= 10
-    }
-
-    radix = EDFLIB_TIME_DIMENSION / 10
-
-    for(i=dotposition+1 i<len i++)
-    {
-        value += ((long long)(str[i] - 48)) * radix
-        radix /= 10
-    }
-  }
-  else
-  {
-    radix = EDFLIB_TIME_DIMENSION
-
-    for(i=len-1 i>=0 i--)
-    {
-        value += ((long long)(str[i] - 48)) * radix
-        radix *= 10
-    }
-  }
-
-  if(str[-1]=='-')  value = -value
-
-  return(value)
-}
-
-
-static void edflib_latin1_to_ascii(char *str, int len)
-{
-  int i, value
-
-  for(i=0 i<len i++)
-  {
-    value = *((unsigned char *)(str + i))
-
-    if((value>31)&&(value<127))
-    {
-      continue
-    }
-
-    switch(value)
-    {
-      case 128 : str[i] = 'E'  break
-
-      case 130 : str[i] = ','  break
-
-      case 131 : str[i] = 'F'  break
-
-      case 132 : str[i] = '\"'  break
-
-      case 133 : str[i] = '.'  break
-
-      case 134 : str[i] = '+'  break
-
-      case 135 : str[i] = '+'  break
-
-      case 136 : str[i] = '^'  break
-
-      case 137 : str[i] = 'm'  break
-
-      case 138 : str[i] = 'S'  break
-
-      case 139 : str[i] = '<'  break
-
-      case 140 : str[i] = 'E'  break
-
-      case 142 : str[i] = 'Z'  break
-
-      case 145 : str[i] = '`'  break
-
-      case 146 : str[i] = '\''  break
-
-      case 147 : str[i] = '\"'  break
-
-      case 148 : str[i] = '\"'  break
-
-      case 149 : str[i] = '.'  break
-
-      case 150 : str[i] = '-'  break
-
-      case 151 : str[i] = '-'  break
-
-      case 152 : str[i] = '~'  break
-
-      case 154 : str[i] = 's'  break
-
-      case 155 : str[i] = '>'  break
-
-      case 156 : str[i] = 'e'  break
-
-      case 158 : str[i] = 'z'  break
-
-      case 159 : str[i] = 'Y'  break
-
-      case 171 : str[i] = '<'  break
-
-      case 180 : str[i] = '\''  break
-
-      case 181 : str[i] = 'u'  break
-
-      case 187 : str[i] = '>'  break
-
-      case 191 : str[i] = '\?'  break
-
-      case 192 : str[i] = 'A'  break
-
-      case 193 : str[i] = 'A'  break
-
-      case 194 : str[i] = 'A'  break
-
-      case 195 : str[i] = 'A'  break
-
-      case 196 : str[i] = 'A'  break
-
-      case 197 : str[i] = 'A'  break
-
-      case 198 : str[i] = 'E'  break
-
-      case 199 : str[i] = 'C'  break
-
-      case 200 : str[i] = 'E'  break
-
-      case 201 : str[i] = 'E'  break
-
-      case 202 : str[i] = 'E'  break
-
-      case 203 : str[i] = 'E'  break
-
-      case 204 : str[i] = 'I'  break
-
-      case 205 : str[i] = 'I'  break
-
-      case 206 : str[i] = 'I'  break
-
-      case 207 : str[i] = 'I'  break
-
-      case 208 : str[i] = 'D'  break
-
-      case 209 : str[i] = 'N'  break
-
-      case 210 : str[i] = 'O'  break
-
-      case 211 : str[i] = 'O'  break
-
-      case 212 : str[i] = 'O'  break
-
-      case 213 : str[i] = 'O'  break
-
-      case 214 : str[i] = 'O'  break
-
-      case 215 : str[i] = 'x'  break
-
-      case 216 : str[i] = 'O'  break
-
-      case 217 : str[i] = 'U'  break
-
-      case 218 : str[i] = 'U'  break
-
-      case 219 : str[i] = 'U'  break
-
-      case 220 : str[i] = 'U'  break
-
-      case 221 : str[i] = 'Y'  break
-
-      case 222 : str[i] = 'I'  break
-
-      case 223 : str[i] = 's'  break
-
-      case 224 : str[i] = 'a'  break
-
-      case 225 : str[i] = 'a'  break
-
-      case 226 : str[i] = 'a'  break
-
-      case 227 : str[i] = 'a'  break
-
-      case 228 : str[i] = 'a'  break
-
-      case 229 : str[i] = 'a'  break
-
-      case 230 : str[i] = 'e'  break
-
-      case 231 : str[i] = 'c'  break
-
-      case 232 : str[i] = 'e'  break
-
-      case 233 : str[i] = 'e'  break
-
-      case 234 : str[i] = 'e'  break
-
-      case 235 : str[i] = 'e'  break
-
-      case 236 : str[i] = 'i'  break
-
-      case 237 : str[i] = 'i'  break
-
-      case 238 : str[i] = 'i'  break
-
-      case 239 : str[i] = 'i'  break
-
-      case 240 : str[i] = 'd'  break
-
-      case 241 : str[i] = 'n'  break
-
-      case 242 : str[i] = 'o'  break
-
-      case 243 : str[i] = 'o'  break
-
-      case 244 : str[i] = 'o'  break
-
-      case 245 : str[i] = 'o'  break
-
-      case 246 : str[i] = 'o'  break
-
-      case 247 : str[i] = '-'  break
-
-      case 248 : str[i] = '0'  break
-
-      case 249 : str[i] = 'u'  break
-
-      case 250 : str[i] = 'u'  break
-
-      case 251 : str[i] = 'u'  break
-
-      case 252 : str[i] = 'u'  break
-
-      case 253 : str[i] = 'y'  break
-
-      case 254 : str[i] = 't'  break
-
-      case 255 : str[i] = 'y'  break
-
-      default  : str[i] = ' '  break
-    }
-  }
-}
-
-
-static void edflib_latin12utf8(char *latin1_str, int len)
-{
-  int i, j
-
-  unsigned char *str, tmp_str[512]
-
-
-  str = (unsigned char *)latin1_str
-
-  j = 0
-
-  for(i=0 i<len i++)
-  {
-    if(str[i]==0)
-    {
-      tmp_str[j] = 0
-
-      break
-    }
-
-    tmp_str[j] = str[i]
-
-    if(str[i]<32) tmp_str[j] = '.'
-
-    if((str[i]>126)&&(str[i]<160))  tmp_str[j] = '.'
-
-    if(str[i]>159)
-    {
-      if((len-j)<2)
-      {
-        tmp_str[j] = ' '
-      }
-      else
-      {
-        tmp_str[j] = 192 + (str[i]>>6)
-        j++
-        tmp_str[j] = 128 + (str[i]&63)
-      }
-    }
-
-    j++
-
-    if(j>=len)  break
-  }
-
-  for(i=0 i<len i++)
-  {
-    str[i] = tmp_str[i]
-  }
-}
-
-
-int edfopen_file_writeonly(const char *path, int filetype, int number_of_signals)
-{
-  int i, handle
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-  if((filetype!=EDFLIB_FILETYPE_EDFPLUS)&&(filetype!=EDFLIB_FILETYPE_BDFPLUS))
-  {
-    return(EDFLIB_FILETYPE_ERROR)
-  }
-
-  if(edf_files_open>=EDFLIB_MAXFILES)
-  {
-    return(EDFLIB_MAXFILES_REACHED)
-  }
-
-  for(i=0 i<EDFLIB_MAXFILES i++)
-  {
-    if(hdrlist[i]!=NULL)
-    {
-      if(!(strcmp(path, hdrlist[i].path)))
-      {
-        return(EDFLIB_FILE_ALREADY_OPENED)
-      }
-    }
-  }
-
-  if(number_of_signals<0)
-  {
-    return(EDFLIB_NUMBER_OF_SIGNALS_INVALID)
-  }
-
-  if(number_of_signals>EDFLIB_MAXSIGNALS)
-  {
-    return(EDFLIB_NUMBER_OF_SIGNALS_INVALID)
-  }
-
-  hdr = (struct edfhdrblock *)calloc(1, sizeof(struct edfhdrblock))
-  if(hdr==NULL)
-  {
-    return(EDFLIB_MALLOC_ERROR)
-  }
-
-  hdr.edfparam = (struct edfparamblock *)calloc(1, sizeof(struct edfparamblock) * number_of_signals)
-  if(hdr.edfparam==NULL)
-  {
-    free(hdr)
-
-    return(EDFLIB_MALLOC_ERROR)
-  }
-
-  hdr.writemode = 1
-
-  hdr.edfsignals = number_of_signals
-
-  handle = -1
-
-  for(i=0 i<EDFLIB_MAXFILES i++)
-  {
-    if(hdrlist[i]==NULL)
-    {
-      hdrlist[i] = hdr
-
-      handle = i
-
-      break
-    }
-  }
-
-  if(handle<0)
-  {
-    free(hdr.edfparam)
-
-    free(hdr)
-
-    return(EDFLIB_MAXFILES_REACHED)
-  }
-
-  write_annotationslist[handle] = NULL
-
-  hdr.annotlist_sz = 0
-
-  hdr.annots_in_file = 0
-
-  file = fopeno(path, "wb")
-  if(file==NULL)
-  {
-    free(hdr.edfparam)
-
-    free(hdr)
-
-    return(EDFLIB_NO_SUCH_FILE_OR_DIRECTORY)
-  }
-
-  hdr.file_hdl = file
-
-  strcpy(hdr.path, path)
-
-  edf_files_open++
-
-  if(filetype==EDFLIB_FILETYPE_EDFPLUS)
-  {
-    hdr.edf = 1
-    hdr.edfplus = 1
-  }
-
-  if(filetype==EDFLIB_FILETYPE_BDFPLUS)
-  {
-    hdr.bdf = 1
-    hdr.bdfplus = 1
-  }
-
-  hdr.long_data_record_duration = EDFLIB_TIME_DIMENSION
-
-  hdr.data_record_duration = 1.0
-
-  hdr.nr_annot_chns = 1
-
-  return(handle)
-}
-
-
-int edf_set_samplefrequency(int handle, int edfsignal, int samplefrequency)
-{
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(edfsignal<0)
-  {
-    return(-1)
-  }
-
-  if(edfsignal>=hdrlist[handle].edfsignals)
-  {
-    return(-1)
-  }
-
-  if(samplefrequency<1)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].datarecords)
-  {
-    return(-1)
-  }
-
-  hdrlist[handle].edfparam[edfsignal].smp_per_record = samplefrequency
-
-  return(0)
-}
-
-
-int edf_set_number_of_annotation_signals(int handle, int annot_signals)
-{
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].datarecords)
-  {
-    return(-1)
-  }
-
-  if((annot_signals < 1) || (annot_signals > 64))
-  {
-    return(-1)
-  }
-
-  hdrlist[handle].nr_annot_chns = annot_signals
-
-  return(0)
-}
-
-
-int edf_set_datarecord_duration(int handle, int duration)
-{
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].datarecords)
-  {
-    return(-1)
-  }
-
-  if((duration < 100) || (duration > 6000000))
-  {
-    return(-1)
-  }
-
-  hdrlist[handle].long_data_record_duration = (long long)duration * 100LL
-
-  if(hdrlist[handle].long_data_record_duration < (EDFLIB_TIME_DIMENSION * 10LL))
-  {
-    hdrlist[handle].long_data_record_duration /= 10LL
-
-    hdrlist[handle].long_data_record_duration *= 10LL
-  }
-  else
-  {
-    hdrlist[handle].long_data_record_duration /= 100LL
-
-    hdrlist[handle].long_data_record_duration *= 100LL
-  }
-
-  hdrlist[handle].data_record_duration = ((double)(hdrlist[handle].long_data_record_duration)) / EDFLIB_TIME_DIMENSION
-
-  return(0)
-}
-
-
-int edfwrite_digital_short_samples(int handle, short *buf)
-{
-  int  i, p,
-       error,
-       sf,
-       digmax,
-       digmin,
-       edfsignal,
-       value
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].bdf == 1)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignal = hdr.signal_write_sequence_pos
-
-  if(!hdr.datarecords)
-  {
-    if(!edfsignal)
-    {
-      error = edflib_write_edf_header(hdr)
-
-      if(error)
-      {
-        return(error)
-      }
-    }
-  }
-
-  sf = hdr.edfparam[edfsignal].smp_per_record
-
-  digmax = hdr.edfparam[edfsignal].dig_max
-
-  digmin = hdr.edfparam[edfsignal].dig_min
-
-  for(i=0 i<sf i++)
-  {
-    value = buf[i]
-
-    if(value>digmax)
-    {
-      value = digmax
-    }
-
-    if(value<digmin)
-    {
-      value = digmin
-    }
-
-    fputc((value)&0xff, file)
-
-    if(fputc((value>>8)&0xff, file)==EOF)
-    {
-      return(-1)
-    }
-
-    if(hdr.bdf)
-    {
-      fputc((value>>16)&0xff, file)
-    }
-
-  }
-
-  hdr.signal_write_sequence_pos++
-
-  if(hdr.signal_write_sequence_pos == hdr.edfsignals)
-  {
-    hdr.signal_write_sequence_pos = 0
-
-    p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-    if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-    {
-      fputc('.', file)
-      p++
-      p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-    }
-    fputc(20, file)
-    fputc(20, file)
-    p += 2
-    for( p<hdr.total_annot_bytes p++)
-    {
-      fputc(0, file)
-    }
-
-    hdr.datarecords++
-
-    fflush(file)
-  }
-
-  return(0)
-}
-
-
-int edfwrite_digital_samples(int handle, int *buf)
-{
-  int  i, p,
-       error,
-       sf,
-       digmax,
-       digmin,
-       edfsignal,
-       value
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignal = hdr.signal_write_sequence_pos
-
-  if(!hdr.datarecords)
-  {
-    if(!edfsignal)
-    {
-      error = edflib_write_edf_header(hdr)
-
-      if(error)
-      {
-        return(error)
-      }
-    }
-  }
-
-  sf = hdr.edfparam[edfsignal].smp_per_record
-
-  digmax = hdr.edfparam[edfsignal].dig_max
-
-  digmin = hdr.edfparam[edfsignal].dig_min
-
-  for(i=0 i<sf i++)
-  {
-    value = buf[i]
-
-    if(value>digmax)
-    {
-      value = digmax
-    }
-
-    if(value<digmin)
-    {
-      value = digmin
-    }
-
-    fputc((value)&0xff, file)
-
-    if(fputc((value>>8)&0xff, file)==EOF)
-    {
-      return(-1)
-    }
-
-    if(hdr.bdf)
-    {
-      fputc((value>>16)&0xff, file)
-    }
-  }
-
-  hdr.signal_write_sequence_pos++
-
-  if(hdr.signal_write_sequence_pos == hdr.edfsignals)
-  {
-    hdr.signal_write_sequence_pos = 0
-
-    p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-    if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-    {
-      fputc('.', file)
-      p++
-      p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-    }
-    fputc(20, file)
-    fputc(20, file)
-    p += 2
-    for( p<hdr.total_annot_bytes p++)
-    {
-      fputc(0, file)
-    }
-
-    hdr.datarecords++
-
-    fflush(file)
-  }
-
-  return(0)
-}
-
-
-int edf_blockwrite_digital_samples(int handle, int *buf)
-{
-  int  i, j, p,
-       error,
-       sf,
-       digmax,
-       digmin,
-       edfsignals,
-       buf_offset,
-       value
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].signal_write_sequence_pos)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignals = hdr.edfsignals
-
-  if(!hdr.datarecords)
-  {
-    error = edflib_write_edf_header(hdr)
-
-    if(error)
-    {
-      return(error)
-    }
-  }
-
-  buf_offset = 0
-
-  for(j=0 j<edfsignals j++)
-  {
-    sf = hdr.edfparam[j].smp_per_record
-
-    digmax = hdr.edfparam[j].dig_max
-
-    digmin = hdr.edfparam[j].dig_min
-
-    for(i=0 i<sf i++)
-    {
-      value = buf[i + buf_offset]
-
-      if(value>digmax)
-      {
-        value = digmax
-      }
-
-      if(value<digmin)
-      {
-        value = digmin
-      }
-
-      fputc(value&0xff, file)
-
-      if(fputc((value>>8)&0xff, file)==EOF)
-      {
-        return(-1)
-      }
-
-      if(hdr.bdf)
-      {
-        fputc((value>>16)&0xff, file)
-      }
-    }
-
-    buf_offset += sf
-  }
-
-  p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-  if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-  {
-    fputc('.', file)
-    p++
-    p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-  }
-  fputc(20, file)
-  fputc(20, file)
-  p += 2
-  for( p<hdr.total_annot_bytes p++)
-  {
-    fputc(0, file)
-  }
-
-  hdr.datarecords++
-
-  fflush(file)
-
-  return(0)
-}
-
-
-int edf_blockwrite_digital_short_samples(int handle, short *buf)
-{
-  int  i, j, p,
-       error,
-       sf,
-       digmax,
-       digmin,
-       edfsignals,
-       buf_offset,
-       value
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].signal_write_sequence_pos)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].bdf == 1)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignals = hdr.edfsignals
-
-  if(!hdr.datarecords)
-  {
-    error = edflib_write_edf_header(hdr)
-
-    if(error)
-    {
-      return(error)
-    }
-  }
-
-  buf_offset = 0
-
-  for(j=0 j<edfsignals j++)
-  {
-    sf = hdr.edfparam[j].smp_per_record
-
-    digmax = hdr.edfparam[j].dig_max
-
-    digmin = hdr.edfparam[j].dig_min
-
-    for(i=0 i<sf i++)
-    {
-      value = buf[i + buf_offset]
-
-      if(value>digmax)
-      {
-        value = digmax
-      }
-
-      if(value<digmin)
-      {
-        value = digmin
-      }
-
-      fputc(value&0xff, file)
-
-      if(fputc((value>>8)&0xff, file)==EOF)
-      {
-        return(-1)
-      }
-
-      if(hdr.bdf)
-      {
-        fputc((value>>16)&0xff, file)
-      }
-    }
-
-    buf_offset += sf
-  }
-
-  p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-  if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-  {
-    fputc('.', file)
-    p++
-    p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-  }
-  fputc(20, file)
-  fputc(20, file)
-  p += 2
-  for( p<hdr.total_annot_bytes p++)
-  {
-    fputc(0, file)
-  }
-
-  hdr.datarecords++
-
-  fflush(file)
-
-  return(0)
-}
-
-
-int edf_blockwrite_digital_3byte_samples(int handle, void *buf)
-{
-  int  j, p,
-       error,
-       edfsignals,
-       total_samples=0
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].signal_write_sequence_pos)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].bdf != 1)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignals = hdr.edfsignals
-
-  if(!hdr.datarecords)
-  {
-    error = edflib_write_edf_header(hdr)
-
-    if(error)
-    {
-      return(error)
-    }
-  }
-
-  for(j=0 j<edfsignals j++)
-  {
-    total_samples += hdr.edfparam[j].smp_per_record
-  }
-
-  if(fwrite(buf, total_samples * 3, 1, file) != 1)
-  {
-    return(-1)
-  }
-
-  p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-  if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-  {
-    fputc('.', file)
-    p++
-    p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-  }
-  fputc(20, file)
-  fputc(20, file)
-  p += 2
-  for( p<hdr.total_annot_bytes p++)
-  {
-    fputc(0, file)
-  }
-
-  hdr.datarecords++
-
-  fflush(file)
-
-  return(0)
-}
-
-
-int edfwrite_physical_samples(int handle, double *buf)
-{
-  int  i, p,
-       error,
-       sf,
-       digmax,
-       digmin,
-       value,
-       edfsignal
-
-  double bitvalue,
-         phys_offset
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignal = hdr.signal_write_sequence_pos
-
-  if(!hdr.datarecords)
-  {
-    if(!edfsignal)
-    {
-      error = edflib_write_edf_header(hdr)
-
-      if(error)
-      {
-        return(error)
-      }
-    }
-  }
-
-  sf = hdr.edfparam[edfsignal].smp_per_record
-
-  digmax = hdr.edfparam[edfsignal].dig_max
-
-  digmin = hdr.edfparam[edfsignal].dig_min
-
-  bitvalue = hdr.edfparam[edfsignal].bitvalue
-
-  phys_offset = hdr.edfparam[edfsignal].offset
-
-  for(i=0 i<sf i++)
-  {
-    value = (buf[i] / bitvalue) - phys_offset
-
-    if(value>digmax)
-    {
-      value = digmax
-    }
-
-    if(value<digmin)
-    {
-      value = digmin
-    }
-
-    fputc(value&0xff, file)
-
-    if(fputc((value>>8)&0xff, file)==EOF)
-    {
-      return(-1)
-    }
-
-    if(hdr.bdf)
-    {
-      fputc((value>>16)&0xff, file)
-    }
-  }
-
-  hdr.signal_write_sequence_pos++
-
-  if(hdr.signal_write_sequence_pos == hdr.edfsignals)
-  {
-    hdr.signal_write_sequence_pos = 0
-
-    p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-    if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-    {
-      fputc('.', file)
-      p++
-      p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-    }
-    fputc(20, file)
-    fputc(20, file)
-    p += 2
-    for( p<hdr.total_annot_bytes p++)
-    {
-      fputc(0, file)
-    }
-
-    hdr.datarecords++
-
-    fflush(file)
-  }
-
-  return(0)
-}
-
-
-int edf_blockwrite_physical_samples(int handle, double *buf)
-{
-  int  i, j, p,
-       error,
-       sf,
-       digmax,
-       digmin,
-       edfsignals,
-       buf_offset,
-       value
-
-  double bitvalue,
-         phys_offset
-
-  FILE *file
-
-  struct edfhdrblock *hdr
-
-
-
-
-  if(handle<0)
-  {
-    return(-1)
-  }
-
-  if(handle>=EDFLIB_MAXFILES)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle]==NULL)
-  {
-    return(-1)
-  }
-
-  if(!(hdrlist[handle].writemode))
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].signal_write_sequence_pos)
-  {
-    return(-1)
-  }
-
-  if(hdrlist[handle].edfsignals == 0)
-  {
-    return(-1)
-  }
-
-  hdr = hdrlist[handle]
-
-  file = hdr.file_hdl
-
-  edfsignals = hdr.edfsignals
-
-  if(!hdr.datarecords)
-  {
-    error = edflib_write_edf_header(hdr)
-
-    if(error)
-    {
-      return(error)
-    }
-  }
-
-  buf_offset = 0
-
-  for(j=0 j<edfsignals j++)
-  {
-    sf = hdr.edfparam[j].smp_per_record
-
-    digmax = hdr.edfparam[j].dig_max
-
-    digmin = hdr.edfparam[j].dig_min
-
-    bitvalue = hdr.edfparam[j].bitvalue
-
-    phys_offset = hdr.edfparam[j].offset
-
-    for(i=0 i<sf i++)
-    {
-      value = (buf[i + buf_offset] / bitvalue) - phys_offset
-
-      if(value>digmax)
-      {
-        value = digmax
-      }
-
-      if(value<digmin)
-      {
-        value = digmin
-      }
-
-      fputc(value&0xff, file)
-
-      if(fputc((value>>8)&0xff, file)==EOF)
-      {
-        return(-1)
-      }
-
-      if(hdr.bdf)
-      {
-        fputc((value>>16)&0xff, file)
-      }
-    }
-
-    buf_offset += sf
-  }
-
-  p = edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) / EDFLIB_TIME_DIMENSION, 0, 1)
-  if(hdr.long_data_record_duration % EDFLIB_TIME_DIMENSION)
-  {
-    fputc('.', file)
-    p++
-    p += edflib_fprint_ll_number_nonlocalized(file, (hdr.datarecords * hdr.long_data_record_duration) % EDFLIB_TIME_DIMENSION, 7, 0)
-  }
-  fputc(20, file)
-  fputc(20, file)
-  p += 2
-  for( p<hdr.total_annot_bytes p++)
-  {
-    fputc(0, file)
-  }
-
-  hdr.datarecords++
-
-  fflush(file)
-
-  return(0)
-}
-
-
-static int edflib_write_edf_header(struct edfhdrblock *hdr)
-{
-  int i, j, p, q,
-      len,
-      rest,
-      edfsignals
-
-  char str[128]
-
-  struct tm *date_time
-
-  time_t elapsed_time
-
-  FILE *file
-
-
-  file = hdr.file_hdl
-
-  edfsignals = hdr.edfsignals
-
-  if(edfsignals<0)
-  {
-    return(-20)
-  }
-
-  if(edfsignals>EDFLIB_MAXSIGNALS)
-  {
-    return(-21)
-  }
-
-  hdr.eq_sf = 1
-
-  for(i=0 i<edfsignals i++)
-  {
-    if(hdr.edfparam[i].smp_per_record<1)
-    {
-      return(-22)
-    }
-
-    if(hdr.edfparam[i].dig_max==hdr.edfparam[i].dig_min)
-    {
-      return(-23)
-    }
-
-    if(hdr.edfparam[i].dig_max<hdr.edfparam[i].dig_min)
-    {
-      return(-24)
-    }
-
-    if(hdr.edfparam[i].phys_max==hdr.edfparam[i].phys_min)
-    {
-      return(-25)
-    }
-
-    if(i > 0)
-    {
-      if(hdr.edfparam[i].smp_per_record != hdr.edfparam[i-1].smp_per_record)
-      {
-        hdr.eq_sf = 0
-      }
-    }
-  }
-
-  for(i=0 i<edfsignals i++)
-  {
-    hdr.edfparam[i].bitvalue = (hdr.edfparam[i].phys_max - hdr.edfparam[i].phys_min) / (hdr.edfparam[i].dig_max - hdr.edfparam[i].dig_min)
-    hdr.edfparam[i].offset = hdr.edfparam[i].phys_max / hdr.edfparam[i].bitvalue - hdr.edfparam[i].dig_max
-  }
-
-  rewind(file)
-
-  if(hdr.edf)
-  {
-    fprintf(file, "0       ")
-  }
-  else
-  {
-    fputc(255, file)
-    fprintf(file, "BIOSEMI")
-  }
-
-  p = 0
-
-  if(hdr.plus_birthdate[0]==0)
-  {
-    rest = 72
-  }
-  else
-  {
-    rest = 62
-  }
-
-  len = strlen(hdr.plus_patientcode)
-  if(len && rest)
-  {
-    if(len>rest)
-    {
-      len = rest
-      rest = 0
-    }
+        pidbytes *= hdr.plus_birthdate * " "
+    end
+    if hdr.plus_patient_name = ""
+        pidbytes *= "X "
     else
-    {
-      rest -= len
-    }
-    strcpy(str, hdr.plus_patientcode)
-    edflib_latin1_to_ascii(str, len)
-    str[len] = 0
-    for(i=0 i<len i++)
-    {
-      if(str[i]==' ')
-      {
-        str[i] = '_'
-      }
-    }
-    p += fprintf(file, "%s ", str)
-  }
-  else
-  {
-    p += fprintf(file, "X ")
-  }
-
-  if(hdr.plus_gender[0]=='M')
-  {
-    fputc('M', file)
-  }
-  else
-  {
-    if(hdr.plus_gender[0]=='F')
-    {
-      fputc('F', file)
-    }
+        pidbytes *= replace(hdr.plus_patient_name, " ", "_") * " "
+    end
+    if hdr.plus_patient_additional != ""
+        pidbytes *= replace(hdr.plus_patient_additional)
+    end
+    if length(pidbytes) > 80
+        pidbytes = pidbytes[1:80]
     else
-    {
-      fputc('X', file)
-    }
-  }
-  fputc(' ', file)
-  p +=2
-
-  if(hdr.plus_birthdate[0]==0)
-  {
-    fputc('X', file)
-    fputc(' ', file)
-
-    p +=2
-  }
-  else
-  {
-    fputc(hdr.plus_birthdate[0], file)
-    fputc(hdr.plus_birthdate[1], file)
-    fputc('-', file)
-    q = edflib_atof_nonlocalized(&(hdr.plus_birthdate[3]))
-    switch(q)
-    {
-      case  1: fprintf(file, "JAN")  break
-      case  2: fprintf(file, "FEB")  break
-      case  3: fprintf(file, "MAR")  break
-      case  4: fprintf(file, "APR")  break
-      case  5: fprintf(file, "MAY")  break
-      case  6: fprintf(file, "JUN")  break
-      case  7: fprintf(file, "JUL")  break
-      case  8: fprintf(file, "AUG")  break
-      case  9: fprintf(file, "SEP")  break
-      case 10: fprintf(file, "OCT")  break
-      case 11: fprintf(file, "NOV")  break
-      case 12: fprintf(file, "DEC")  break
-    }
-    fputc('-', file)
-    fputc(hdr.plus_birthdate[6], file)
-    fputc(hdr.plus_birthdate[7], file)
-    fputc(hdr.plus_birthdate[8], file)
-    fputc(hdr.plus_birthdate[9], file)
-    fputc(' ', file)
-
-    p += 12
-  }
-
-  len = strlen(hdr.plus_patient_name)
-  if(len && rest)
-  {
-    if(len>rest)
-    {
-      len = rest
-      rest = 0
-    }
+        while length(pidbytes) < 80
+            pidbytes *= " "
+        end
+    end
+    write(file, pidbytes)
+    
+    if hdr.startdate_year == 0
+        date = now()
     else
-    {
-      rest -= len
-    }
-    strcpy(str, hdr.plus_patient_name)
-    edflib_latin1_to_ascii(str, len)
-    str[len] = 0
-    for(i=0 i<len i++)
-    {
-      if(str[i]==' ')
-      {
-        str[i] = '_'
-      }
-    }
-    p += fprintf(file, "%s ", str)
-  }
-  else
-  {
-    fputc('X', file)
+        date = DateTime(hdr.startdate_year, hdr.startdate_month, hdr.startdate_day,
+                        hdr.starttime_hour, hdr.starttime_minute, hdr.starttime_second) 
+    end  
 
-    p++
-  }
-
-  len = strlen(hdr.plus_patient_additional)
-  if(len && rest)
-  {
-    if(len>rest)
-    {
-      len = rest
-    }
-    strcpy(str, hdr.plus_patient_additional)
-    edflib_latin1_to_ascii(str, len)
-    str[len] = 0
-    p += fprintf(file, "%s", str)
-  }
-
-  for( p<80 p++)
-  {
-    fputc(' ', file)
-  }
-
-  if(!hdr.startdate_year)
-  {
-    elapsed_time = time(NULL)
-    date_time = localtime(&elapsed_time)
-
-    hdr.startdate_year = date_time.tm_year + 1900
-    hdr.startdate_month = date_time.tm_mon + 1
-    hdr.startdate_day = date_time.tm_mday
-    hdr.starttime_hour = date_time.tm_hour
-    hdr.starttime_minute = date_time.tm_min
-    hdr.starttime_second = date_time.tm_sec % 60
-  }
-
-  p = 0
-
-  p += fprintf(file, "Startdate %02u-", hdr.startdate_day)
-  switch(hdr.startdate_month)
-  {
-    case  1 : fprintf(file, "JAN")  break
-    case  2 : fprintf(file, "FEB")  break
-    case  3 : fprintf(file, "MAR")  break
-    case  4 : fprintf(file, "APR")  break
-    case  5 : fprintf(file, "MAY")  break
-    case  6 : fprintf(file, "JUN")  break
-    case  7 : fprintf(file, "JUL")  break
-    case  8 : fprintf(file, "AUG")  break
-    case  9 : fprintf(file, "SEP")  break
-    case 10 : fprintf(file, "OCT")  break
-    case 11 : fprintf(file, "NOV")  break
-    case 12 : fprintf(file, "DEC")  break
-  }
-  p += 3
-  fputc('-', file)
-  p++
-  p += edflib_fprint_int_number_nonlocalized(file, hdr.startdate_year, 4, 0)
-  fputc(' ', file)
-  p++
-
-  rest = 42
+    ridbytes = "Startdate " * uppercase(Dates.format(date, "dd-uuu-yyyy")) * " "
+ 
 
   len = strlen(hdr.plus_admincode)
   if(len && rest)
