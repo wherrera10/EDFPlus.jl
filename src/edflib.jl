@@ -1,16 +1,16 @@
 #=
-@Version: 0.04
+@Version: 0.041
 @Author: William Herrera, derived from C code by Teunis van Beelen, see below
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
 @Purpose: EEG file routines for EDF, BDF, EDF+, and BDF+ files
 =#
 #
-# Note that except for some of the data structures and constants, most of this code is 
+# Note that except for some of the data structures and constants, most of this code is
 # a complete rewrite of the C version. Application ports will need different API calls from C.
 #
 #==============================================================================
-*
+* The original C code was
 * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Teunis van Beelen
 * All rights reserved.
 *
@@ -38,8 +38,11 @@
 * For more info about the EDF and EDF+ format, visit: http://edfplus.info/specs/
 * For more info about the BDF and BDF+ format, visit: http://www.teuniz.net/edfbrowser/bdfplus%20format%20description.html
 =================================================================================#
+#
+# See also: https://www.edfplus.info/specs/edffaq.html and
+#           https://www.biosemi.com/faq/file_format.htm
+#
 
-# See also: https://www.edfplus.info/specs/edffaq.html
 
 const VERSION = 0.02
 const EDFLIB_MAXSIGNALS =                 512
@@ -69,6 +72,17 @@ const EDFLIB_NO_SAMPLES_IN_RECORD       = -22
 const EDFLIB_DIGMIN_IS_DIGMAX           = -23
 const EDFLIB_DIGMAX_LOWER_THAN_DIGMIN   = -24
 const EDFLIB_PHYSMIN_IS_PHYSMAX         = -25
+
+
+# 24-bit integer routines for BDF format signal data
+import Base.write, Base.read
+using Core.Intrinsics
+# BDF and BDF+ files use 24 bits per data signal point. We cache as Int32 to fit CPU registers
+primitive type Int24 24 end
+Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
+Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
+read(stream::IO, Int24) = (bytes = read(stream, UInt8, (3)); reinterpret(Int24, bytes)[1])
+write(stream::IO, x::Int24) = (bytes = reinterpret(UInt8,[x]); write(stream, bytes))
 
 
 mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
@@ -158,7 +172,7 @@ end
 
 function loadfile(path::String, read_annotations::Bool)
     edfh = EDFPlus()
-    file = fopeno(path, "rb")
+    file = fopeno(path, "r")
     check_edffile(file, edfh)
     if edfh.filetype == edf_error
         throw("Bad EDF/BDF file format at file $path")
@@ -233,13 +247,13 @@ function readdata(edfh)
                         readpos = 1
                         startrow = (i-1)*channellength+1
                         for k in startrow:startrow+channellength-1
-                            bbigbuf[k,chan] = Int(reinterpret(Int24, cbuf[readpos:readpos+2])[1])
+                            bbigbuf[k,chan] = Int32(reinterpret(Int24, cbuf[readpos:readpos+2])[1])
                             readpos +=3
                         end
+                    else
+                        startrow = (i-1)*channellength+1
+                        ebigbuf[startrow:startrow+channellength/2-1, chan] .= reinterpret(Int16, cbuf)
                     end
-                else
-                    startrow = (i-1)*channellength+1
-                    ebigbuf[startrow:startrow+channellength/2-1, chan] .= reinterpret(Int16, cbuf)
                 end
             end
         end
@@ -711,13 +725,63 @@ function readannotations(edfh)
     return 0
 end
 
+function translate24to16bits(edfh)
+
+
+function writeEDFrecords(edfh, fh)
+    if isempty(edfh.EDFsignals)
+        if (edfh.bdf || edfh.bdfplus) and !isempty(edfh.BDFsignals)
+            translate24to16(edfh)
+        else
+            return 0
+        end
+    end
+    written = 0
+    for i in 1:edfh.datarecords
+        for j in 1:edfh.signalparam
+            try
+                if j in edfh.annotation_signals
+                    for (k, annot) in enumerate(edfh.annotations[i,j])
+                    end
+                end
+            catch y
+                warn("Error writing EDF signal $i channel $j: $y\n")
+                throw y
+            end
+        end
+    end
+    return written
+end
+
 
 function write_EDFplus(edfh, newpath)
-
+    try
+        fh = open(newpath,"w")
+        writeheader(edfh)
+    # FIXME update file_duration etc and .bdf, .edf etc AFTER data signals all written
+    # write data as EDF -- if was BDF adjust width if needed for 24 to 16 bits
+    # close handle, reopen as a read handle
+    catch y
+        warn("$y")
+        return -1
+    end
+    # return size of written file
 end
 
 
 function write_BDFplus(edfh,newpath)
+    try
+        fh = open(newpath,"w")
+        writeheader(edfh)
+    # FIXME update file_duration etc
+    # write data as BDF -- if was EDF adjust width if needed for 16 to 24 bits
+    # note that if was 32 bit data need to mask to 24 bits and write as Int24 data type
+    # close handle, reopen as a read handle
+    catch y
+        warn("$y")
+        return -1
+    end
+    # return size of written file
 end
 
 
