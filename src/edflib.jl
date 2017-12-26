@@ -68,7 +68,7 @@ const EDFLIB_DIGMAX_LOWER_THAN_DIGMIN   = -24
 const EDFLIB_PHYSMIN_IS_PHYSMAX         = -25
 
 
-mutable struct EDFParam          # this structure contains all the relevant EDF-signal parameters of one signal
+mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
   label::String                  # label (name) of the signal, null-terminated string
   transducer::String             # signal transducer type
   physdimension::String          # physical dimension (uV, bpm, mA, etc.), null-terminated string
@@ -84,7 +84,7 @@ mutable struct EDFParam          # this structure contains all the relevant EDF-
   bufoffset::Int
   bitvalue::Float64
   annotation::Bool
-  EDFParam() = new("","","",0.0,0.0,0,0,0,0,"","",0.0,0,0.0,false)
+  ChannelParam() = new("","","",0.0,0.0,0,0,0,0,"","",0.0,0,0.0,false)
 end
 
 
@@ -137,18 +137,18 @@ mutable struct EDFPlus                    # signal file data for EDF, BDF, EDF+,
     datarecords::Int64                    # number of datarecords in the file
     startdatestring::String               # date recording started in dd-uuu-yyyy format
     reserved::String                      # reserved, 32 byte string
-    hdrsize::Int
-    recordsize::Int
-    data_record_duration::Float64
-    mapped_signals::Array{Int,1}
-    annotation_channels::Array{Int,1}
-    signalparam::Array{EDFParam,1}            # 1D array of structs which contain the relevant per-signal parameters
+    hdrsize::Int                          # size of header in bytes
+    recordsize::Int                       # size of one data record in bytes, these follow header
+    data_record_duration::Float64         # time duration of one data record in seconds
+    mapped_signals::Array{Int,1}          # positions in record of channels carrying data 
+    annotation_channels::Array{Int,1}     # positions in record of annotation channels
+    signalparam::Array{ChannelParam,1}        # 1D array of structs which contain the relevant per-signal parameters
     annotations::Array{Array{Annotation,1},2} # 2D array of lists of annotations, rows are records, columns channels
     EDFsignals::Array{Int16,2}    # 2D array, each row a record, columns are channels EXCLUDING annotations
     BDFsignals::Array{Int32,2}    # Note that either EDFsignals or BDFsignals is used but never both
     EDFPlus() = new(IOBuffer(),"",false,"",false,false,false,false,false,0,0,0.0,0,0,0,0.0,0.0,0,
                         "","","","","","","","","","","",0.0,0,"","",0,0,0.0,
-                        Array{Int,1}(),Array{Int,1}(),Array{EDFParam,1}(),
+                        Array{Int,1}(),Array{Int,1}(),Array{ChannelParam,1}(),
                         Array{Array{EDFAnnotation,1},2}(),Array{Int16,2}(),Array{Int32,2}())
 end
 
@@ -181,8 +181,6 @@ function loadfile(path::String, read_annotations::Bool)
     edfh.file_duration = edfh.data_record_duration * edfh.datarecords
 
     if edfh.edfplus == false && edfh.bdfplus == false
-        edfh.patient = hdr.patient
-        edfh.recording = hdr.recording
         edfh.patientcode = ""
         edfh.gender = ""
         edfh.birthdate = ""
@@ -193,7 +191,7 @@ function loadfile(path::String, read_annotations::Bool)
         edfh.equipment = ""
         edfh.recording_additional = ""
     else
-        # EDF+ and BDF+ use different ID information
+        # EDF+ and BDF+ use different ID information so blank other fielsds
         edfh.patient = ""
         edfh.recording = ""
         if read_annotations
@@ -255,32 +253,72 @@ function readdata(edfh)
 end
 
 
+signaldata(edfh) = (edfh.bdf || edfh.bdfplus) ? BDFsignals : EDFsignals
+recordslice(edfh, startpos, endpos) = signaldata(edfh)[startpos:endpos, 1:end]
+bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
+datapointinterval(edfh) = edfh.data_record_duration * bytesperdatapoint(edfh) / edfh.recordsize
 signalchannelnumbers(edfh) = edfh.mapped_signals
-
-
 annotationchannelnumbers(edfh) = edfh.annotation_channels
 
 
-function getdigitaldata(edfh, channelnumber)
+function recordindexat(edfh, secondsafterstart)
+    if edfh.edfplus || edfh.bdfplus
+        for i in 1:edfh.datarecords
+            firstannot = edfh.annotations[i, 1][1]
+            if secondsafterstart > firstannot.onset
+                return i
+            end
+        end
+        return edfh.datarecords  # last one is at end
+    end
+    Int(floor(secs / edfh.record_duration)) + 1    # no annotation times
+end
+
+
+function signalat(edfh, secondsafter)
+    ridx = recordindexat(edfh, secondsafter)
+    seconddiff = secondsafter - edfh.annotations[ridx, 1][1].onset
+    additional = Int(floor(seconddiff / datapointinterval(edfh)))
+    Int(floor(recordsize * (ridx - 1) / bytesperdatapoint(edfh))) + additional
+end
+
+
+function epochmarkers(edfh, secs) = map(t->signalat(edfh,t), 0:secs:edfh.file_duration)
+
+
+epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals, 
+                                startsec=0, endsec=edfh.file_duration, physical=true)
+    epochs = collect(startsec:epochsecs:endsec)
+    if length(epochs) < 2
+        epochmarkers = [signalat(edfh,startsec), signalat(edfh,endsec)]
+    else
+        epochmarkers = map(t->signalat(edfh,t), startsec:epochsecs:endsec)
+    end
+    multiplier = edfh.signalparam[channelnumber].bitvalue
+    epochwidth = epochmarkers[2] - epochmarkers[1]
+    data = signaldata(edfh)
+    imap(x -> data[x:x+epochwidth], epochmarkers)
+end
+
+
+function digitalchanneldata(edfh, channelnumber)
     if !(channelnumber in edfh.mapped_signals)
         return []
     end
-    if edfh.bdf || edfh.bdfplus
-        return edfh.BDFsignals[1:end,channelnumber]
-    end
+    signaldata(edfh)[1:end,channelnumber]
 end
 
 
 # translate to physical measure with bit value etc.
-function getphysicaldata(edfh, channelnumber)
+function physicalchanneldata(edfh, channelnumber)
     digdata = getdigitaldata(edfh, channelnumber)
     if length(digdata) < 1
         return digdata
     end
-    param = edfh.signalparam[channelnumber]
-    multiplier = (param.physmax-param.phys.min)/(param.digmax-param.digmin)
+    multiplier = edfh.signalparam[channelnumber].bitvalue
     return digdata .* multiplier
 end
+
 
 
 function closefile(edfh)
@@ -377,14 +415,14 @@ function check_edffile(inputfile, edfh)
     try
         hdrbuf = read(inputfile, UInt8, (edfh.channelcount + 1) * 256)
         for i in 1:edfh.channelcount  # loop over channel signal parameters
-            pblock = EDFParam()
+            pblock = ChannelParam()
             # channel label gets special handling since it might indicate an annotations channel
             pos = 257 + (i-1) * 16
             channellabel = convert(String, hdrbuf[pos:pos+15])
             throwifhasforbiddenchars(channellabel)
             pblock.label = channellabel                         # channel label in ASCII, eg "Fp1"
-            if (edfhdr.edfplus && channellabel == "EDF Annotations ") ||
-               (edfhdr.bdfplus && channellabel == "BDF Annotations ")
+            if (edfh.edfplus && channellabel == "EDF Annotations ") ||
+               (edfh.bdfplus && channellabel == "BDF Annotations ")
                 push!(edfh.annotation_channels, i)
                 pblock.annotation = true
             else
@@ -617,6 +655,9 @@ function readannotations(edfh)
                 endpos = edfparam[chan].bufoffset + edfparam[chan].smp_per_record * samplesize
                 annotbuf = convert(String, cvnbuf[startpos:endpos])
                 for (j, tal) in enumerate(split(annotbuf, "\x00"))
+                    if tal = ""
+                        break # padding zeroes at end
+                    end
                     onset = 0.0  # time in seconds + or - from startdate/starttime of file
                     duration = ""  # duration in seconds in text form, may be empty
                     alist = []
@@ -653,69 +694,66 @@ function readannotations(edfh)
 end
 
 
-function write_EDFplus(hdr, newpath)
+function write_EDFplus(edfh, newpath)
 
 end
 
 
-function write_BDFplus(hdr,newpath)
+function write_BDFplus(edfh,newpath)
 end
 
 
-function writeheader(hdr::EDFPlus)
-    file = hdr.iobuf
-    channelcount = hdr.channelcount
+function writeheader(edfh::EDFPlus)
+    file = edfh.iobuf
+    channelcount = edfh.channelcount
     if channelcount < 0
         return -20
     elseif channelcount > EDFLIB_MAXSIGNALS
         return -21
     end
-    hdr.eq_sf = 1
     for i in 1:channelcount
-        if hdr.edfparam[i].smp_per_record < 1
+        if edfh.edfparam[i].smp_per_record < 1
             return -22
-        elseif hdr.edfparam[i].digmax == hdr.edfparam[i].digmin
+        elseif edfh.edfparam[i].digmax == edfh.edfparam[i].digmin
             return -23
-        elseif hdr.edfparam[i].digmax < hdr.edfparam[i].digmin
+        elseif edfh.edfparam[i].digmax < edfh.edfparam[i].digmin
             return -24
-        elseif hdr.edfparam[i].physmax == hdr.edfparam[i].physmin
+        elseif edfh.edfparam[i].physmax == edfh.edfparam[i].physmin
             return(-25)
-        elseif i > 0 && hdr.edfparam[i].smp_per_record != hdr.edfparam[i-1].smp_per_record
-            hdr.eq_sf = 0
         end
     end
     for i in 1:channelcount
-        hdr.edfparam[i].bitvalue = (hdr.edfparam[i].physmax - hdr.edfparam[i].physmin) /
-                                   (hdr.edfparam[i].digmax - hdr.edfparam[i].digmin)
-        hdr.edfparam[i].offset = hdr.edfparam[i].physmax /
-                                 hdr.edfparam[i].bitvalue - hdr.edfparam[i].digmax
+        edfh.edfparam[i].bitvalue = (edfh.edfparam[i].physmax - edfh.edfparam[i].physmin) /
+                                   (edfh.edfparam[i].digmax - edfh.edfparam[i].digmin)
+        edfh.edfparam[i].offset = edfh.edfparam[i].physmax /
+                                 edfh.edfparam[i].bitvalue - edfh.edfparam[i].digmax
     end
     rewind(file)
-    if(hdr.edf)
+    if(edfh.edf)
         write(file, "0       ")
     else
         write(file, b"\xffBIOSEMI")
     end
-    pidbytes = hdr.patientcode = "" ? "X " : replace(hdr.patientcode, " ", "_") * " "
-    if hdr.gender[1] == 'M'
+    pidbytes = edfh.patientcode = "" ? "X " : replace(edfh.patientcode, " ", "_") * " "
+    if edfh.gender[1] == 'M'
         pidbytes *= "M "
-    elseif hdr.gender[1] == 'F'
+    elseif edfh.gender[1] == 'F'
         pidbytes *= "F "
     else
         pidbytes *= "X "
     end
-    if hdr.plus_birthdate != ""
+    if edfh.plus_birthdate != ""
         pidbytes += write(file, "X ")
     else
-        pidbytes *= hdr.birthdate * " "
+        pidbytes *= edfh.birthdate * " "
     end
-    if hdr.plus_patientname == ""
+    if edfh.plus_patientname == ""
         pidbytes *= "X "
     else
-        pidbytes *= replace(hdr.patientname, " ", "_") * " "
+        pidbytes *= replace(edfh.patientname, " ", "_") * " "
     end
-    if hdr.plus_patient_additional != ""
-        pidbytes *= replace(hdr.patient_additional)
+    if edfh.plus_patient_additional != ""
+        pidbytes *= replace(edfh.patient_additional)
     end
     if length(pidbytes) > 80
         pidbytes = pidbytes[1:80]
@@ -726,31 +764,31 @@ function writeheader(hdr::EDFPlus)
     end
     write(file, pidbytes)
 
-    if hdr.startdate_year != 0
-        date = DateTime(hdr.startdate_year, hdr.startdate_month, hdr.startdate_day,
-                        hdr.starttime_hour, hdr.starttime_minute, hdr.starttime_second)
+    if edfh.startdate_year != 0
+        date = DateTime(edfh.startdate_year, edfh.startdate_month, edfh.startdate_day,
+                        edfh.starttime_hour, edfh.starttime_minute, edfh.starttime_second)
     else
         date = now()
     end
 
     ridbytes = "Startdate " * uppercase(Dates.format(date, "dd-uuu-yyyy")) * " "
-    if hdr.plus_admincode == ""
+    if edfh.plus_admincode == ""
         ridbytes *= "X "
     else
-        ridbytes *= replace(hdr.admincode, " ", "_")
+        ridbytes *= replace(edfh.admincode, " ", "_")
     end
-    if hdr.plus_technician == ""
+    if edfh.plus_technician == ""
         ridbytes *= "X "
     else
-        ridbytes *= replace(hdr.technician, " ", "_")
+        ridbytes *= replace(edfh.technician, " ", "_")
     end
-    if hdr.plus_equipment == ""
+    if edfh.plus_equipment == ""
         ridbytes *= "X "
     else
-        ridbytes *= replace(hdr.equipment, " ", "_")
+        ridbytes *= replace(edfh.equipment, " ", "_")
     end
-    if hdr.plus_recording_additional != ""
-        ridbytes *= replace(hdr.recording_additional, " ", "_")
+    if edfh.plus_recording_additional != ""
+        ridbytes *= replace(edfh.recording_additional, " ", "_")
     end
     writeleftjust(file, ridbytes, 80)
     startdate = Dates.format(date, "dd.mm.yy")
@@ -759,7 +797,7 @@ function writeheader(hdr::EDFPlus)
     write(file, starttime)
     writeleftjust(file, (channelcount + 1) * 256, 8)
 
-    if hdr.edf
+    if edfh.edf
         writeleftjust(file, "EDF+C", 44)
     else
         writeleftjust(file, "BDF+C", 44)
@@ -767,28 +805,28 @@ function writeheader(hdr::EDFPlus)
     # header initialized to -1 in duration in case data is not finalized yet
     # This must be updated when final channel data is written.
     writeleftjust(file, "-1      ", 8)
-    if floor(hdr.data_record_duration) == hdr.data_record_duration
-        writeleftjust(file, Int(hdr.data_record_duration), 8)
+    if floor(edfh.data_record_duration) == edfh.data_record_duration
+        writeleftjust(file, Int(edfh.data_record_duration), 8)
     else
-        writeleftjust(file, "$(hdr.data_record_duration)", 8)
+        writeleftjust(file, "$(edfh.data_record_duration)", 8)
     end
     writeleftjust(file, channelcount, 4)
     for i in 1:channelcount
-        if hdr.edfparam[i].annotation
-            if hdr.edf
+        if edfh.edfparam[i].annotation
+            if edfh.edf
                 write(file, "EDF Annotations ")
             else
                 write(file, "BDF Annotations ")
             end
         else
-            writeleftjust(file, hdr.edfparam[i].label, 16)
+            writeleftjust(file, edfh.edfparam[i].label, 16)
         end
     end
     for i in 1:channelcount
-        writeleftjust(file, hdr.edfparam[i].transducer, 80)
+        writeleftjust(file, edfh.edfparam[i].transducer, 80)
     end
     for i in 1:channelcount
-        writeleftjust(file, hdr.edfparam[i].physdimension, 8)
+        writeleftjust(file, edfh.edfparam[i].physdimension, 8)
     end
     for i in 1:channelcount
         writejustleft(file, hdr->edfparam[i].physmin, 8)
@@ -803,43 +841,30 @@ function writeheader(hdr::EDFPlus)
         writejustleft(file, hdr->edfparam[i].digmax, 8)
     end
     for i in 1:channelcount
-        writejustleft(file, hdr.edfparam[i].prefilter, 80)
+        writejustleft(file, edfh.edfparam[i].prefilter, 80)
     end
     for i in 1:channelcount
-        writejustleft(hdr.edfparam[i].smp_per_record, 8)
+        writejustleft(edfh.edfparam[i].smp_per_record, 8)
     end
     for i in 1:channel_count
-        writejustleft(file, hdr.reserved, 32)
+        writejustleft(file, edfh.reserved, 32)
     end
     return 0
 end
 
+function getannotationbyonset(edfh, onset)
+end
 
-function edfwrite_annotation_utf8(edfh, onset, duration, description)
+function addannotation(edfh, onset, duration, description)
     newannot = EDFAnnotation()
     newannot.onset = onset
     newannot.duration = duration
     if length(description) > EDFLIB_WRITE_MAX_ANNOTATION_LEN
         description = description[1:EDFLIB_WRITE_MAX_ANNOTATION_LEN]
     end
-    description = replace(description, r"[\0-\x1f]", ".")
-    newannot.annotation = description
-    push!(annotations[handle], newannot)
-    edfh.annots_in_file += 1
-    return 0
-end
-
-
-function edfwrite_annotation_latin1(edfh, onset, duration, description)
-    newannot = EDFAnnotation()
-    newannot.onset = onset
-    newannot.duration = duration
-    if length(description) > EDFLIB_WRITE_MAX_ANNOTATION_LEN
-        description = description[1:EDFLIB_WRITE_MAX_ANNOTATION_LEN]
-    end
-    description = replace(description, r"[\0-\x1f]", ".")
-    description = latintoacsii(description)
-    newannot.annotation = description
+    newannot.annotation = latintoacsii(replace(description, r"[\0-\x1f]", "."))
+    # determine which place record is in around where we should add
+    nearest = getannotationbyonset(edfh, onset)
     push!(annotations[handle], newannot)
     edfh.annots_in_file += 1
     return 0
