@@ -1,11 +1,14 @@
 #=
-@Version: 0.03
+@Version: 0.04
 @Author: William Herrera, derived from C code by Teunis van Beelen, see below
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
 @Purpose: EEG file routines for EDF, BDF, EDF+, and BDF+ files
 =#
-
+#
+# Note that except for some of the data structures and constants, most of this code is 
+# a complete rewrite of the C version. Application ports will need different API calls from C.
+#
 #==============================================================================
 *
 * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Teunis van Beelen
@@ -140,7 +143,7 @@ mutable struct EDFPlus                    # signal file data for EDF, BDF, EDF+,
     hdrsize::Int                          # size of header in bytes
     recordsize::Int                       # size of one data record in bytes, these follow header
     data_record_duration::Float64         # time duration of one data record in seconds
-    mapped_signals::Array{Int,1}          # positions in record of channels carrying data 
+    mapped_signals::Array{Int,1}          # positions in record of channels carrying data
     annotation_channels::Array{Int,1}     # positions in record of annotation channels
     signalparam::Array{ChannelParam,1}        # 1D array of structs which contain the relevant per-signal parameters
     annotations::Array{Array{Annotation,1},2} # 2D array of lists of annotations, rows are records, columns channels
@@ -286,7 +289,7 @@ end
 function epochmarkers(edfh, secs) = map(t->signalat(edfh,t), 0:secs:edfh.file_duration)
 
 
-epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals, 
+epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                                 startsec=0, endsec=edfh.file_duration, physical=true)
     epochs = collect(startsec:epochsecs:endsec)
     if length(epochs) < 2
@@ -297,7 +300,23 @@ epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
     multiplier = edfh.signalparam[channelnumber].bitvalue
     epochwidth = epochmarkers[2] - epochmarkers[1]
     data = signaldata(edfh)
-    imap(x -> data[x:x+epochwidth], epochmarkers)
+    if physical
+        data .*= multiplier
+    end
+    imap(x -> data[x:x+epochwidth, channels], epochmarkers)
+end
+
+
+annotation_epoch_iterator(edfh, epochsecs; channels=edfh.annotation_signals,
+                                startsec=0, endsec=edfh.file_duration)
+    epochs = collect(startsec:epochsecs:endsec)
+    if length(epochs) < 2
+        epochmarkers = [signalat(edfh,startsec), signalat(edfh,endsec)]
+    else
+        epochmarkers = map(t->signalat(edfh,t), startsec:epochsecs:endsec)
+    end
+    epochwidth = epochmarkers[2] - epochmarkers[1]
+    imap(x -> edfh.annotations[x:x+epochwidth, channels], epochmarkers)
 end
 
 
@@ -318,7 +337,6 @@ function physicalchanneldata(edfh, channelnumber)
     multiplier = edfh.signalparam[channelnumber].bitvalue
     return digdata .* multiplier
 end
-
 
 
 function closefile(edfh)
