@@ -7,7 +7,7 @@
 =#
 
 
-module EDFlib
+module EDFPlus
 import Base.write, Base.read
 using Core.Intrinsics
 
