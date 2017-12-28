@@ -1,6 +1,6 @@
 #=
-@Version: 0.042
-@Author: William Herrera, derived from C code by Teunis van Beelen, see below
+@Version: 0.044
+@Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
 @Purpose: EEG file routines for EDF, BDF, EDF+, and BDF+ files
@@ -12,7 +12,7 @@ import Base.write, Base.read
 using Core.Intrinsics
 
 
-export ChannelParam, EDFPlus, Annotation, version, digitalchanneldata, physicalchanneldata,
+export ChannelParam, BEDFPlus, Annotation, version, digitalchanneldata, physicalchanneldata,
        loadfile, writefile, epoch_iterator, annotation_epoch_iterator, closefile
 
 
@@ -21,7 +21,7 @@ export ChannelParam, EDFPlus, Annotation, version, digitalchanneldata, physicalc
 # a complete rewrite of the C version. Application ports will need different API calls from C.
 #
 #==============================================================================
-* The original C code was
+* The original EDFlib C code was
 * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Teunis van Beelen
 * All rights reserved.
 *
@@ -85,8 +85,8 @@ const EDFLIB_DIGMAX_LOWER_THAN_DIGMIN   = -24
 const EDFLIB_PHYSMIN_IS_PHYSMAX         = -25
 
 
-""" 
-    DataFormat 
+"""
+    DataFormat
 enum for types this package handles. Current format for a file is also /same/
 """
 @enum DataFormat bdf bdfplus edf edfplus same
@@ -151,11 +151,11 @@ const EDFLIB_WRITE_MAX_ANNOTATION_LEN = 40
 
 
 """
-    mutable struct EDFPlus
+    mutable struct BEDFPlus
 Data struct for EDF, EDF+, BDF, and BDF+ EEG type signal files.
 """
-mutable struct EDFPlus                    # signal file data for EDF, BDF, EDF+, and BDF+ files
-    iobuf::IOBuffer                       # IOBuffer for read and write of file
+mutable struct BEDFPlus                    # signal file data for EDF, BDF, EDF+, and BDF+ files
+    ios                                    # file handle for reading the file
     path::String
     writemode::Bool
     version::String
@@ -198,10 +198,10 @@ mutable struct EDFPlus                    # signal file data for EDF, BDF, EDF+,
     annotations::Array{Array{Annotation,1},2} # 2D array of lists of annotations, rows are records, columns channels
     EDFsignals::Array{Int16,2}    # 2D array, each row a record, columns are channels EXCLUDING annotations
     BDFsignals::Array{Int32,2}    # Note that either EDFsignals or BDFsignals is used but never both
-    EDFPlus() = new(IOBuffer(),"",false,"",false,false,false,false,false,0,0,0.0,0,0,0.0,0,0,0,
+    BEDFPlus() = new(nothing,"",false,"",false,false,false,false,false,0,0,0.0,0,0,0,0.0,0,0,0,
                         "","","","","","","","","","","",0.0,0,"","",0,0,
                         Array{Int,1}(),Array{Int,1}(),Array{ChannelParam,1}(),
-                        Array{Array{EDFAnnotation,1},2}(),Array{Int16,2}(),Array{Int32,2}())
+                        Array{Array{Annotation,1},2}(0,0),Array{Int16,2}(0,0),Array{Int32,2}(0,0))
 end
 
 
@@ -209,13 +209,15 @@ end
     loadfile
 Load a BDF+ or EDF+ type file.
 Takes a pathname. Will ignore annotations if second argument is set false.
-Returns an EDFPlus structure including header and data.
+Returns an BEDFPlus structure including header and data.
 """
-function loadfile(path::String, read_annotations::Bool)
-    edfh = EDFPlus()
-    file = fopeno(path, "r")
-    check_edffile(file, edfh)
-    if edfh.filetype == edf_error
+function loadfile(path::String, read_annotations=true)
+    edfh = BEDFPlus()
+    file = open(path, "r")
+    edfh.path = path
+    edfh.ios = file
+    check_edffile(edfh)
+    if edfh.filetype == EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
         throw("Bad EDF/BDF file format at file $path")
     end
     if edfh.discontinuous
@@ -236,7 +238,7 @@ function loadfile(path::String, read_annotations::Bool)
         edfh.filetype = EDFLIB_FILETYPE_BDFPLUS
     end
 
-    edfh.file_duration = edfh.data_record_duration * edfh.datarecords
+    edfh.file_duration = edfh.datarecord_duration * edfh.datarecords
 
     if edfh.edfplus == false && edfh.bdfplus == false
         edfh.patientcode = ""
@@ -253,7 +255,7 @@ function loadfile(path::String, read_annotations::Bool)
         edfh.patient = ""
         edfh.recording = ""
         if read_annotations
-            if readannotations(edfh) == 0
+            if readannotations(edfh) < 0
                 throw("Errors in annotations in file at $path")
             end
         end
@@ -291,7 +293,7 @@ end
     epoch_iterator
 Make an iterator for EEG epochs of a given duration between sart and stop times.
 Required arguments:
-edfh EDFPlus struct
+edfh BEDFPlus struct
 epochsecs second duration of each epoch
 Optional arguments:
 channels List of channel numbers for data, defaults to all signal data channels
@@ -338,7 +340,7 @@ end
     digitalchanneldata
 Get a single digital channel of data in entirety.
 Arguments:
-edfh          the EDFPlus struct
+edfh          the BEDFPlus struct
 channelnumber the channel number in the records-- a channel in the mapped_signals list
 """
 function digitalchanneldata(edfh, channelnumber)
@@ -353,7 +355,7 @@ end
     physicalchanneldata
 Get a single data channel in its entirely, in the physical units stated in the header
 Arguments:
-edfh          the EDFPlus struct
+edfh          the BEDFPlus struct
 channelnumber the channel number in the records-- a channel in the mapped_signals list
 """
 function physicalchanneldata(edfh, channelnumber)
@@ -368,17 +370,17 @@ end
 
 """
     closefile
-Close the file opened by loadfile and loaded to the EDFPlus struct
+Close the file opened by loadfile and loaded to the BEDFPlus struct
 """
 function closefile(edfh)
-    close(edfh.iobuf)
+    close(edfh.ios)
     return 0
 end
 
 
 """
     readdata
-Helper function for loadfile, reads signal data into the EDFPlus struct
+Helper function for loadfile, reads signal data into the BEDFPlus struct
 """
 function readdata(edfh)
     channellength = Int(edfh.recordsize / edfh.channelcount)
@@ -389,11 +391,11 @@ function readdata(edfh)
     end
     try
         cbuf = zeros(UInt8, channellength)
-        seek(edfh.iobuf, edfh.hdrsize + 1)
+        seek(edfh.ios, edfh.hdrsize + 1)
         for i in 1:edfh.datarecords
             chan = 0
             for j in 1:edfh.channelcount
-                read(edfh.iobuf, cbuf)
+                read(edfh.ios, cbuf)
                 if j in edfh.mapped_signals
                     chan += 1
                     if edfh.bdf || edfh.bdfplus
@@ -423,7 +425,7 @@ function readdata(edfh)
 end
 
 
-""" Return which EDFPlus variable holds the signal data """
+""" Return which BEDFPlus variable holds the signal data """
 signaldata(edfh) = (edfh.bdf || edfh.bdfplus) ? BDFsignals : EDFsignals
 
 """ Get a slice of the data in the recording from one data entry position to another """
@@ -433,7 +435,7 @@ recordslice(edfh, startpos, endpos) = signaldata(edfh)[startpos:endpos, 1:end]
 bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
 
 """ Time interval in fractions of a second between individual signal data points """
-datapointinterval(edfh) = edfh.data_record_duration * bytesperdatapoint(edfh) / edfh.recordsize
+datapointinterval(edfh) = edfh.datarecord_duration * bytesperdatapoint(edfh) / edfh.recordsize
 
 """ List of the channel nubers carrying signal data (binary coded) """
 signalchannelnumbers(edfh) = edfh.mapped_signals
@@ -485,20 +487,20 @@ epochmarkers(edfh, secs) = map(t->signalat(edfh,t), 0:secs:edfh.file_duration)
     check_edffile
 Helper function for loadfile and writefile
 """
-function check_edffile(inputfile, edfh)
+function check_edffile(edfh)
     function throwifhasforbiddenchars(bytes)
-        if findfirst(c -> (c < 32) || (c > 126), bytes) > 0
+        if findfirst(c -> (Int(c) < 32) || (Int(c) > 126), bytes) > 0
             throw("Control type forbidden chars in header")
         end
     end
-    rewind(inputfile)
+    seekstart(edfh.ios)
     try
-        hdrbuf = read(inputfile, UInt8, 256)                    # check header
+        hdrbuf = read(edfh.ios, UInt8, 256)                    # check header
         if hdrbuf[1:8] == b"\xffBIOSEMI"                        # version bdf
             edfh.bdf = true
             edfh.edf = false
             edfh.version = "BIOSEMI"
-        elseif hdrbuf[1:8] == b"\0       "                      # version edf
+        elseif hdrbuf[1:8] == b"0       "                       # version edf
             edfh.bdf = false
             edfh.edf = true
             edfh.version = ""
@@ -506,34 +508,32 @@ function check_edffile(inputfile, edfh)
             throw("identification code error")
         end
         throwifhasforbiddenchars(hdrbuf[9:88])
-        edfh.patient = convert(String, hdrbuf[9:88])            # patient
+        edfh.patient = convert(String, trim(hdrbuf[9:88]))      # patient
         throwifhasforbiddenchars(hdrbuf[89:168])
-        edfh.recording = convert(String, hdrbuf[89:168])        # recording
+        edfh.recording = convert(String, trim(hdrbuf[89:168]))  # recording
         throwifhasforbiddenchars(hdrbuf[169:176])
-        datestring = convert(String, hdrbuf[169:176])           # start date
+        datestring = convert(String, trim(hdrbuf[169:176]))     # start date
         date = Date(datestring, "dd.mm.yy")
         if Dates.year(date) < 84
             date += Dates.Year(2000)
         else
             date += Dates.Year(1900)
         end
-        edfh.startdate_day = Dates.Day(date)
-        edfh.startdate_month = Dates.Month(date)
-        edfh.startdate_year = Dates.Year(date)
+        edfh.startdate_day = Dates.day(date)
+        edfh.startdate_month = Dates.month(date)
+        edfh.startdate_year = Dates.year(date)
         throwifhasforbiddenchars(hdrbuf[177:184])
         timestring = convert(String, hdrbuf[177:184])           # start time
-        mat = match(timestring, r"(\d\d).(\d\d).(\d\d)")
+        mat = match(r"(\d\d).(\d\d).(\d\d)", timestring)
         starttime_hour, starttime_minute, starttime_second = mat.captures
-        edfh.starttime_hour = starttime_hour
-        edfh.starttime_minute = starttime_minute
-        edfh.starttime_second = starttime_second
+        edfh.starttime_hour = parse(Int, trim(starttime_hour))
+        edfh.starttime_minute = parse(Int, trim(starttime_minute))
+        edfh.starttime_second = parse(Int, trim(starttime_second))
         throwifhasforbiddenchars(hdrbuf[185:192])
-        headersize = parse(Int32, hdrbuf[185:192])              # edf header size, changes with channels
-        if edfh.channelcount * 256 + 256 != headersize
-            throw("Bad header size")
-        end
+        headersize = parse(Int32, trim(hdrbuf[185:192]))        # edf header size, changes with channels
+        edfh.hdrsize = headersize
         throwifhasforbiddenchars(hdrbuf[193:236])
-        subtype = convert(String, hdrbuf[193:197])              # subtype or version of data format
+        subtype = convert(String, trim(hdrbuf[193:197]))        # subtype or version of data format
         if edfh.edf
             if subtype == "EDF+C"
                 edfh.edfplus = true
@@ -550,28 +550,32 @@ function check_edffile(inputfile, edfh)
             end
         end
         throwifhasforbiddenchars(hdrbuf[237:244])
-        edfh.datarecords = parse(Int32, hdrbuf[237:244])  # number of data records
+        edfh.datarecords = parse(Int32, trim(hdrbuf[237:244]))  # number of data records
         if edfh.datarecords < 1
             throw("Bad data record count: unknown or < 1")
         end
         throwifhasforbiddenchars(hdrbuf[245:252])
-        edfh.data_record_duration = parse(Float32, hdrbuf[245:252]) # datarecord duration in seconds
+        edfh.datarecord_duration = parse(Float32, trim(hdrbuf[245:252])) # datarecord duration in seconds
         throwifhasforbiddenchars(hdrbuf[253:256])
-        edfh.channelcount = parse(Int16, hdrbuf[253:256])         # number of data signals or records (channels) in file
-        if edfh.channelcount < 0 || edf.channelcount > EDF_MAXSIGNALS
+        edfh.channelcount = parse(Int16, trim(hdrbuf[253:256]))  # number of data signals or records (channels) in file
+        if edfh.channelcount < 0
             throw("bad channel count")
+        end
+        calcheadersize = (edfh.channelcount + 1) * 256
+        if calcheadersize != headersize
+            throw("Bad header size: in file as $headersize, calculates to be $calcheadersize")
         end
 
     catch y
         warn("$y\n")
-        edfh.filetype = edf_error
+        edfh.filetype = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
         return edfh
     end
 
     # process the signal characteristics in the header after reading header into hdrbuf
-    rewind(inputfile)
+    seekstart(edfh.ios)
     try
-        hdrbuf = read(inputfile, UInt8, (edfh.channelcount + 1) * 256)
+        hdrbuf = read(edfh.ios, UInt8, (edfh.channelcount + 1) * 256)
         for i in 1:edfh.channelcount  # loop over channel signal parameters
             pblock = ChannelParam()
             # channel label gets special handling since it might indicate an annotations channel
@@ -590,46 +594,46 @@ function check_edffile(inputfile, edfh)
             transducertype = convert(String, hdrbuf[pos:pos+79])
             throwifhasforbiddenchars(transducertype)
             pblock.transducer = transducertype                    # transducer type eg "active electrode"
-            if pfblock.annotation && findfirst(c->!isspace(c), transducertype) > 0
+            if pblock.annotation && findfirst(c->!isspace(c), transducertype) > 0
                 throw("Transducer field should be blank in annotation channels")
             end
             pos = 257 + edfh.channelcount * 96 + (i-1) * 8
-            pblock.physdimension = convert(String, hdrbuf[pos:pos+7])# physical dimensions eg. "uV"
+            pblock.physdimension = convert(String, trim(hdrbuf[pos:pos+7]))# physical dimensions eg. "uV"
             pos = 257 + edfh.channelcount * 104 + (i-1) * 8
-            pblock.physmin = parse(Float32, hdrbuf[pos, pos+7])  # physical minimum in above dimensions
+            pblock.physmin = parse(Float32, trim(hdrbuf[pos:pos+7]))  # physical minimum in above dimensions
             pos = 257 + edfh.channelcount * 112 + (i-1) * 8
-            pblock.physmax = parse(Float32, hdrbuf[pos, pos+7])  # physical maximum in above dimensions
+            pblock.physmax = parse(Float32, trim(hdrbuf[pos:pos+7]))  # physical maximum in above dimensions
             pos = 257 + edfh.channelcount * 120 + (i-1) * 8
-            pblock.digmin = parse(Float32, hdrbuf[pos, pos+7])   # digital minimum in above dimensions
+            pblock.digmin = parse(Float32, trim(hdrbuf[pos:pos+7]))   # digital minimum in above dimensions
             pos = 257 + edfh.channelcount * 128 + (i-1) * 8
-            pblock.digmax = parse(Float32, hdrbuf[pos, pos+7])   # digital maximum in above dimensions
+            pblock.digmax = parse(Float32, trim(hdrbuf[pos:pos+7]))   # digital maximum in above dimensions
             if edfh.edfplus && pblock.annotation && (pblock.digmin != -32768 || pblock.digmax != 32767)
                 throw("edfplus annotation data entry should have the digital min parameters set to extremes")
             elseif edfh.bdfplus && pblock.annotation && (pblock.digmin != -8388608 || pblock.digmax != 8388607)
                 throw("bdf annotation data entry should have the digital max parameters set to extremes")
-            elseif edfh.edf && (pblock.digmin < -32768 || pblock.digital_min > 32767 ||
-                   pblock.digmax < -32768 || pblock.digital_max > 32767)
+            elseif edfh.edf && (pblock.digmin < -32768 || pblock.digmin > 32767 ||
+                   pblock.digmax < -32768 || pblock.digmax > 32767)
                 throw("edf digital parameter out of range")
-            elseif edfh.bdf && (pblock.digmin < -8388608 || pblock.digital_min > 8388607 ||
-                   pblock.digmax < -8388608 || pblock.digital_max > 8388607)
+            elseif edfh.bdf && (pblock.digmin < -8388608 || pblock.digmin > 8388607 ||
+                   pblock.digmax < -8388608 || pblock.digmax > 8388607)
                 throw("bdf digital parameter out of range")
             end
             pos = 257 + edfh.channelcount * 136 + (i-1) * 80
             pfchars = convert(String, hdrbuf[pos:pos+79])
             throwifhasforbiddenchars(pfchars)
             pblock.prefilter = pfchars                            # prefilter field eg "HP:DC"
-            if pfblock.annotation && findfirst(c->!isspace(c), pfchars) > 0
+            if pblock.annotation && findfirst(c->!isspace(c), pfchars) > 0
                 throw("Prefilter field should be blank in annotation channels")
             end
             pos = 257 + edfh.channelcount * 216 + (i-1) * 8
-            pblock.smp_per_record = parse(Int, hdrbuf[pos,pos+7]) # number of samples of this channel per data record
+            pblock.smp_per_record = parse(Int, trim(hdrbuf[pos:pos+7])) # number of samples of this channel per data record
             edfh.recordsize += pblock.smp_per_record
             pos = 257 + edfh.channelcount * 224 + (i-1) * 32
             reserved = convert(String, hdrbuf[pos:pos+31])        # reserved text field
             throwifhasforbiddenchars(reserved)
             pblock.reserved = reserved
             if pblock.annotation == false && !edfh.edfplus && !edfh.bdfplus &&
-                                             edfh.data_record_duration < 0.0000001
+                                             edfh.datarecord_duration < 0.0000001
                     throw("signal data may be mislabeled")
             end
             push!(edfh.signalparam, pblock)
@@ -675,12 +679,13 @@ function check_edffile(inputfile, edfh)
     =#
     try
         if edfh.edfplus || edfh.bdfplus
-            subfield = split(edfh.patient)
+            patienttxt = convert(String, edfh.patient)
+            subfield = split(patienttxt)
             if length(subfield) < 4
                 throw("Plus patient identification lacking enough fields")
             end
             edfh.patientcode = subfield[1][1] == 'X' ? "" : subfield[1]
-            edfh.patientcode = replace(edfh.plus_patientcode, "_", " ")
+            edfh.patientcode = replace(edfh.patientcode, "_", " ")
             if subfield[2] != "M" && subfield[2] != "F" && subfield[2] != "X"
                 throw("patient identification second field must be X, F or M")
             elseif subfield[2] == "M"
@@ -719,19 +724,19 @@ function check_edffile(inputfile, edfh)
      'local recording identification' field would start with:
      Startdate X X X X. Additional subfields may follow the ones described here.
     =#
-            subfield = split(edfh.recording)
+            subfield = split(trim(edfh.recording))
             if length(subfield) < 5
                 throw("Not enough fields in plus recording data")
             elseif subfield[1] != "Startdate" || (subfield[2] != "X" &&
-                 (!(dor = Date(subfield[2], "dd-uuu-yyyy") isa Date) ||
-                  !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[2][4:6])))
+                 (!((dor = Date(subfield[2], "dd-uuu-yyyy")) isa Date)) ||
+                  !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[2][4:6]))
                 throw("Bad recording field start")
             elseif subfield[2] == "X"
                 edfh.startdatestring = ""
             else
                 edfh.startdatestring = subfield[2]
                 if Dates.year(dor) < 1970
-                    throw("bad startdate year in recording data")
+                    throw("bad startdate year in recording data: got $(Dates.year(dor)) from $dor")
                 else
                     edfh.startdate_year = Dates.year(dor)
                 end
@@ -757,26 +762,26 @@ function check_edffile(inputfile, edfh)
         end
 
         edfh.hdrsize = (edfh.channelcount + 1) * 256
-        filesize = filesize(edfh.path)   # get actual file size
-        if filesize != edfh.recordsize * edfh.datarecords + edfh.hdrsize
-            throw("file size is not compatible with header information")
+        filsiz = filesize(edfh.path)   # get actual file size
+        filszbyhdr = edfh.recordsize * edfh.datarecords + edfh.hdrsize
+        if filsiz != filszbyhdr
+            throw("file size is not compatible with header information: header says $filszbyhdr, filesystem $filsiz")
         end
     catch y
         warn("$y\n")
-        edf_error[1] = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
+        edfh.edf_filetype = EDFLIB_FILE_CONTAINS_FORMAT_ERRORS
         return 0
     end
 
     n = 0
-    for i in i: edfh.channelcount
-        edfh.edfparam[i].bufoffset = n
-        n += edfh.edfparam[i].smp_per_record * (edfh.bdf ? 3 : 2)
-        edfh.edfparam[i].bitvalue = (edfh.edfparam[i].physmax - edfh.edfparam[i].physmin) /
-                                      (edfh.edfparam[i].digmax - edfh.edfparam[i].digmin)
-        edfh.edfparam[i].offset = edfh.edfparam[i].physmax / edfh.edfparam[i].bitvalue -
-                                    edfh.edfparam[i].digmax
+    for i in 1:edfh.channelcount
+        edfh.signalparam[i].bufoffset = n
+        n += edfh.signalparam[i].smp_per_record * (edfh.bdf ? 3 : 2)
+        edfh.signalparam[i].bitvalue = (edfh.signalparam[i].physmax - edfh.signalparam[i].physmin) /
+                                      (edfh.signalparam[i].digmax - edfh.signalparam[i].digmin)
+        edfh.signalparam[i].offset = edfh.signalparam[i].physmax / edfh.signalparam[i].bitvalue -
+                                    edfh.signalparam[i].digmax
     end
-    edfh.iobuf = inputfile
     return edfh
 end
 
@@ -786,36 +791,26 @@ end
 Helper function for loadfile
 """
 function readannotations(edfh)
-    inputfile = edfh.iobuf
-    channelcount = edfh.channelcount
-    recordsize = edfh.recordsize
-    edfparam = edfh.edfparam
-    datarecords = edfh.datarecords
-    data_record_duration = edfh.data_record_duration
-    discontinuous = edfh.discontinuous
-    annot_ch = edfh.annotation_channels
     samplesize = edfh.edfplus ? 2 : (edfh.bdfplus ? 3: 1)
-
-    max_tal_ln = 0
-    for chan in annot_ch
-        if max_tal_ln < edfparam[chan].smp_per_record * samplesize
-            max_tal_ln = edfparam[chan].smp_per_record * samplesize
+    max_tal_ln = 128
+    for chan in edfh.annotation_channels
+        if max_tal_ln < edfh.signalparam[chan].smp_per_record * samplesize
+            max_tal_ln = edfh.signalparam[chan].smp_per_record * samplesize
         end
     end
-    if max_tal_ln < 128
-        max_tal_len = 128
-    end
-    seek(inputfile, (channelcount + 1) * 256)
+    seek(edfh.ios, (edfh.channelcount + 1) * 256)
     elapsedtime = 0
-    annotations = Array{Array{Annotation,1},2}(datarecords, length(annot_ch))()
-    fill!(annotations,[])
-    for i in 1:datarecords
+    edfh.annotations = Array{Array{Annotation,1},2}(edfh.datarecords, length(edfh.annotation_channels))
+    fill!(edfh.annotations,[])
+    added = 0
+    for i in 1:edfh.datarecords
         try
-            cnvbuf = read(inputfile, UInt8, recordsize)
-            for chan in annot_ch
-                startpos = edfparam[chan].bufoffset + 1
-                endpos = edfparam[chan].bufoffset + edfparam[chan].smp_per_record * samplesize
-                annotbuf = convert(String, cvnbuf[startpos:endpos])
+            cnvbuf = read(edfh.ios, UInt8, edfh.recordsize)
+            for (chanidx,chan) in enumerate(edfh.annotation_channels)
+                startpos = edfh.signalparam[chan].bufoffset + 1
+                endpos = edfh.signalparam[chan].bufoffset + edfh.signalparam[chan].smp_per_record * samplesize
+                annotbuf = convert(String, cnvbuf[startpos:endpos])
+                newannot = Annotation()
                 for (j, tal) in enumerate(split(annotbuf, "\x00"))
                     if tal == ""
                         break # padding zeroes at end
@@ -825,16 +820,24 @@ function readannotations(edfh)
                     alist = []
                     for (k, annot) in enumerate(split(tal, "\x14"))
                         if j == 1 && k == 1 # first annot channel of first record should be timekeeping signal
-                                offsettimestr = match(annot, r"^(\d+)").captures[1]
-                                edfh.starttime_subsecond = parse(Float64, offsettimestr)
+                            offsetmatch = match(r"^([\-\+\d]+)", annot)
+                            if offsetmatch != nothing
+                                offsettimestr = offsetmatch.captures[1]
+                            else
+                                throw("no match for [1,1] annotation time in string $annot")
+                            end
+                            edfh.starttime_subsecond = parse(Float64, offsettimestr)
+                            newannot = Annotation(edfh.starttime_subsecond, "", "")
                         elseif k == 1  # first record of others is time and optional duration of event annotated
-                            if length(tsignal = split(annot, "\x15")) > 1
-                                onset = convert(Float64, tsignal[1])
+                            tsignal = split(annot, "\x15")
+                            if length(tsignal) > 1
+                                onset = parse(Float64, tsignal[1])
                                 duration = convert(String, tsignal[2])
                             else
-                                onset = convert(Float64, tsignal[1])
+                                onset = parse(Float64, tsignal[1])
                                 duration = ""
                             end
+                            newannot = Annotation(onset, duration, "")
                         elseif length(annot) > 0
                             annottxt = convert(String, annot)
                             if length(annottxt) > EDFLIB_MAX_ANNOTATION_LEN
@@ -842,17 +845,18 @@ function readannotations(edfh)
                                 annottxt = annottxt[1:EDFLIB_MAX_ANNOTATION_LEN]
                             end
                             newannot = Annotation(onset, duration, annottxt)
-                            annotations[i,j] = vcat(annotations[i,j], newannot)
                         end
+                        edfh.annotations[i,chanidx] = vcat(edfh.annotations[i,chanidx], newannot)
+                        added += 1
                     end
                 end
             end
         catch y
             warn("$y\n")
-            return 9
+            return -1
         end
     end
-    return 0
+    return added
 end
 
 
@@ -976,7 +980,7 @@ end
 
 """
     writeBDFrecords
-Write an EDFPlus format file
+Write an BEDFPlus format file
 Helper file for writefile
 """
 function writeBDFrecords(edfh, fh)
@@ -1012,8 +1016,8 @@ dummyacquire(edfh) = 0
 
 
 """
-    write_EDFPlus
-Write an EDFPlus format file
+    write_BEDFPlus
+Write an BEDFPlus format file
 Helper file for writefile
 """
 function write_EDFplus(edfh, newpath, acquire=dummyacquire)
@@ -1075,8 +1079,8 @@ end
     writeheader
 Helper function for writefile
 """
-function writeheader(edfh::EDFPlus)
-    file = edfh.iobuf
+function writeheader(edfh::BEDFPlus)
+    file = edfh.ios
     channelcount = edfh.channelcount
     if channelcount < 0
         return -20
@@ -1100,7 +1104,7 @@ function writeheader(edfh::EDFPlus)
         edfh.edfparam[i].offset = edfh.edfparam[i].physmax /
                                  edfh.edfparam[i].bitvalue - edfh.edfparam[i].digmax
     end
-    rewind(file)
+    seekstart(file)
     if(edfh.edf)
         write(file, "0       ")
     else
@@ -1114,17 +1118,17 @@ function writeheader(edfh::EDFPlus)
     else
         pidbytes *= "X "
     end
-    if edfh.plus_birthdate != ""
+    if edfh.birthdate != ""
         pidbytes += write(file, "X ")
     else
         pidbytes *= edfh.birthdate * " "
     end
-    if edfh.plus_patientname == ""
+    if edfh.patientname == ""
         pidbytes *= "X "
     else
         pidbytes *= replace(edfh.patientname, " ", "_") * " "
     end
-    if edfh.plus_patient_additional != ""
+    if edfh.patient_additional != ""
         pidbytes *= replace(edfh.patient_additional)
     end
     if length(pidbytes) > 80
@@ -1144,22 +1148,22 @@ function writeheader(edfh::EDFPlus)
     end
 
     ridbytes = "Startdate " * uppercase(Dates.format(date, "dd-uuu-yyyy")) * " "
-    if edfh.plus_admincode == ""
+    if edfh.admincode == ""
         ridbytes *= "X "
     else
         ridbytes *= replace(edfh.admincode, " ", "_")
     end
-    if edfh.plus_technician == ""
+    if edfh.technician == ""
         ridbytes *= "X "
     else
         ridbytes *= replace(edfh.technician, " ", "_")
     end
-    if edfh.plus_equipment == ""
+    if edfh.equipment == ""
         ridbytes *= "X "
     else
         ridbytes *= replace(edfh.equipment, " ", "_")
     end
-    if edfh.plus_recording_additional != ""
+    if edfh.recording_additional != ""
         ridbytes *= replace(edfh.recording_additional, " ", "_")
     end
     writeleftjust(file, ridbytes, 80)
@@ -1177,10 +1181,10 @@ function writeheader(edfh::EDFPlus)
     # header initialized to -1 in duration in case data is not finalized yet
     # This must be updated when final channel data is written.
     writeleftjust(file, "-1      ", 8)
-    if floor(edfh.data_record_duration) == edfh.data_record_duration
-        writeleftjust(file, Int(edfh.data_record_duration), 8)
+    if floor(edfh.datarecord_duration) == edfh.datarecord_duration
+        writeleftjust(file, Int(edfh.datarecord_duration), 8)
     else
-        writeleftjust(file, "$(edfh.data_record_duration)", 8)
+        writeleftjust(file, "$(edfh.datarecord_duration)", 8)
     end
     writeleftjust(file, channelcount, 4)
     for i in 1:channelcount
@@ -1254,6 +1258,10 @@ function addannotation(edfh, onset, duration, description)
     end
     return 0
 end
+
+
+""" trim whitespace, aka trim in java etc"""
+trim(str) = replace(replace(convert(String, str), r"^\s*(\S.*)$", s"\1"), r"(^.*\S)\s*$", s"\1")
 
 
 """
