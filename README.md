@@ -1,6 +1,6 @@
-# julia-EDF
+# EDFPlus.jl
 
-Julia for handling EDF and EDF+ European Data Format EEG files.
+Julia for handling BDF+ and EDF+ EEG and similar signal data files..
 
 Heavily influenced by Teunis van Beelen's C library, edflib.
 
