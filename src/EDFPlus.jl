@@ -11,8 +11,9 @@ module EDFPlus
 using Core.Intrinsics
 
 
-export ChannelParam, BEDFPlus, Annotation, version, digitalchanneldata, physicalchanneldata,
-       loadfile, writefile, epoch_iterator, annotation_epoch_iterator, closefile
+export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
+       digitalchanneldata, physicalchanneldata, loadfile, writefile,
+       epoch_iterator, annotation_epoch_iterator, closefile
 
 
 #
@@ -174,7 +175,7 @@ mutable struct BEDFPlus                    # signal file data for EDF, BDF, EDF+
     reserved::String                      # reserved, 32 byte string
     headersize::Int                       # size of header in bytes
     recordsize::Int                       # size of one data record in bytes, these follow header
-    annotation_channel::Int               # position in record of annotation channel
+    annotationchannel::Int               # position in record of annotation channel
     mapped_signals::Array{Int,1}          # positions in record of channels carrying data
     signalparam::Array{ChannelParam,1}    # Array of structs which contain the per-signal parameters
     annotations::Array{Array{Annotation,1},1} # Array of lists of annotations
@@ -403,8 +404,8 @@ Close the file opened by loadfile and loaded to the BEDFPlus struct
 Releases memory from read data in edfh
 """
 function closefile(edfh)
-    edfh.EDFsignals = 0
-    edfh.BDFsignals = 0
+    edfh.EDFsignals = Array{Int16,2}(0,0)
+    edfh.BDFsignals = Array{Int32,2}(0,0)
     close(edfh.ios)
     edfh.filetype = CLOSED
     0
@@ -614,7 +615,7 @@ function checkfile(edfh)
             pblock.label = channellabel                          # channel label in ASCII, eg "Fp1"
             if (edfh.edfplus && channellabel == "EDF Annotations ") ||
                (edfh.bdfplus && channellabel == "BDF Annotations ")
-                edfh.annotation_channel = i
+                edfh.annotationchannel = i
                 pblock.annotation = true
             else
                 push!(edfh.mapped_signals, i)
@@ -817,7 +818,7 @@ Helper function for loadfile
 """
 function readannotations(edfh)
     samplesize = bytesperdatapoint(edfh)
-    chan = edfh.annotation_channel
+    chan = edfh.annotationchannel
     max_tal_ln = edfh.signalparam[chan].smp_per_record * samplesize
     seek(edfh.ios, (edfh.channelcount + 1) * 256)
     edfh.annotations = Array{Array{Annotation,1},1}(edfh.datarecords)
@@ -991,10 +992,8 @@ function write_EDFplus(edfh, newpath, acquire=dummyacquire)
     # close handle, reopen as a read handle, load/check file, close again
     close(fh)
     newedfh = loadfile(newpath, true)
-    close(newedfh.ios)
-    newedfh = 0
     println("$newpath written successfully, $written bytes.")
-    written
+    newedfh
 end
 
 
@@ -1016,6 +1015,8 @@ function write_BDFplus(edfh, newpath, acquire=dummyacquire)
     # close handle, reopen as a read handle, check header
     close(fh)
     newedfh = loadfile(newpath, true)
+    println("$newpath written successfully, $written bytes.")
+    newedfh
 end
 
 
@@ -1188,7 +1189,7 @@ function addannotation(edfh, onset, duration, description)
     end
     newannot.annotation = [latintoacsii(replace(description, r"[\0-\x1f]", "."))]
     neartimeindex = recordinexat(edfh, onset)
-    if isempty(edfh.annotations) && edfh.annotation_channel == 0
+    if isempty(edfh.annotations) && edfh.annotationchannel == 0
         throw("No annotation channels in file")
     else
         addpos = 1
