@@ -175,7 +175,7 @@ mutable struct BEDFPlus                    # signal file data for EDF, BDF, EDF+
     reserved::String                      # reserved, 32 byte string
     headersize::Int                       # size of header in bytes
     recordsize::Int                       # size of one data record in bytes, these follow header
-    annotationchannel::Int               # position in record of annotation channel
+    annotationchannel::Int                # position in record of annotation channel
     mapped_signals::Array{Int,1}          # positions in record of channels carrying data
     signalparam::Array{ChannelParam,1}    # Array of structs which contain the per-signal parameters
     annotations::Array{Array{Annotation,1},1} # Array of lists of annotations
@@ -248,6 +248,7 @@ end
 """
     writefile
 Write to data in the edfh struct to the file indicated by newpath
+Returns the file handle of the file writte opened for reading
 """
 function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
     if sigformat == same
@@ -1173,6 +1174,20 @@ end
 
 
 """
+   annotationtoTAL
+Create a TAL (timestamped annotation list) text entry out of an annotation
+"""
+function annotationtobytes(ann)
+    txt = trimrightzeros(@sprintf("%-+f", ann.onset))
+    if ann.duration != ""
+        txt *= "\x15" * ann.duration
+    end
+    txt *= "\x14" * ann.annotation * "\x14\x00"
+    txt
+end
+
+
+"""
     addannotation
 Add an annotation at the given onset timepoint
 Note :description is a test string, not an array argument here
@@ -1188,19 +1203,24 @@ function addannotation(edfh, onset, duration, description)
         description = description[1:EDFLIB_WRITE_MAX_ANNOTATION_LEN]
     end
     newannot.annotation = [latintoacsii(replace(description, r"[\0-\x1f]", "."))]
-    neartimeindex = recordinexat(edfh, onset)
+    neartimeindex = recordindexat(edfh, onset)
     if isempty(edfh.annotations) && edfh.annotationchannel == 0
         throw("No annotation channels in file")
     else
-        addpos = 1
-        for (i,annot) in enumerate(edfh.annotations[neartimeindex])
-            if annot.onset <= addpos
-                addpos = i
-            else
+        # add to the signal record if it fits somewhere (it should)
+        (startpos,endpos) = signalindices(edfh, annotationchannel)
+        toadd = annotationtoTAL(newannot)
+        additionalbytes = length(toadd)
+        for recordnum in neartimeindex:edfh.datarecords
+            channbytes = reshape(UInt8, signaldata(edfh)[recordnum, startpos:endpos])
+            addindex = findlast(channbytes)
+            if addidx > 0 && additionalbytes < edfh.recordsize - addindex
+                channbytes[addindex+1:addindex+additionalbytes] .= toadd
+                # add to that annotation list as well
+                annotations[recordnum] = vcat(annotations[recordnum], newannot)
                 break
             end
         end
-        annotations[neartimeindex] = vcat(annotations[neartimeindex], newannot)
     end
     0
 end
