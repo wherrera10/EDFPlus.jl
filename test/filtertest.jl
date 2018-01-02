@@ -25,5 +25,4 @@ sample = notchfilter(sample, samplerate(edfh, p4))
 @test length(sample) == 3001
 @test round(maximum(sample), 3) == 921.389
 
-return true
-
+true
