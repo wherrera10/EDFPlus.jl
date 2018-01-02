@@ -1,5 +1,5 @@
 #=
-@Version: 0.48
+@Version: 0.49
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -9,11 +9,13 @@
 
 module EDFPlus
 using Core.Intrinsics
+using DSP
 
 
 export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
        digitalchanneldata, physicalchanneldata, loadfile, writefile,
-       epoch_iterator, annotation_epoch_iterator, closefile
+       epoch_iterator, annotation_epoch_iterator, closefile, samplerate,
+       highpassfilter, lowpassfilter, notchfilter
 
 
 #
@@ -148,7 +150,7 @@ mutable struct BEDFPlus                    # signal file data for EDF, BDF, EDF+
     bdfplus::Bool
     discontinuous::Bool
     filetype::FileStatus                  # @enum FileStatus as above
-    channelcount::Int                     # total number of EDF signals in the file INCLUDING annotation channels
+    channelcount::Int                     # total number of EDF signal bands in the file INCLUDING annotation channels
     file_duration::Float64                # duration of the file in seconds expressed as 64-bit floating point
     startdate_day::Int
     startdate_month::Int
@@ -319,19 +321,18 @@ function channeltime_segment(edfh, channel, startsec, endsec, physical)
     end
     (row1, col1) = signalat(edfh, startsec, channel)
     (row2, col2) = signalat(edfh, endsec, channel)
+    multiplier = edfh.signalparam[channelnumber].bitvalue
     if row1 == row2
-        return sigdata[row1, col1:col2]
+        return physical ? sigdata[row1,col1:col2] .* multiplier : sigdata[row1,col1:col2]
     end
     startpos = Int(edfh.signalparam[chan].bufoffset / bytesperdatapoint(edfh)) + 1
     endpos = startpos + edfh.signalparam[chan].smp_per_record - 1
     row1data = sigdata[row1, col1:endpos]
     rwo2data = sigdata[row2, startpos:col2]
     if row2 - row1 > 1
-        for i in row1+1:row2-1
-            row1data = vcat(row1data, sigdata[i,startpos:endpos])
-        end
+        otherdata = sigdata[row1+1:row2-1, startpos:endpos]
+        row2data = vcat(reshape(otherdata, length(otherdata)), rowdata)
     end
-    multiplier = edfh.signalparam[channelnumber].bitvalue
     if physical
         return vcat(row1data, row2data) .* multiplier
     else
@@ -360,7 +361,7 @@ end
 
 """
     signalindices
-Get a pair of indices of a channel in the tranformed (integer) signal data
+Get a pair of indices of a channel's bytes within each of the data records
 """
 function signalindices(edfh, channelnumber)
     startcol = Int(edfh.signalparam[channelnumber].bufoffset / bytesperdatapoint(edfh)) + 1
@@ -376,7 +377,11 @@ Arguments:
 edfh          the BEDFPlus struct
 channelnumber the channel number in the records
 """
-digitalchanneldata(edfh, channelnumber) = signaldata(edfh)[1:end, signalindices(edfh, channelnumber)]
+function digitalchanneldata(edfh, channelnumber)
+    span = signalindices(edfh, channelnumber)
+    data = signaldata(edfh)[:, span[1]:span[2]]
+    reshape(data, length(data))
+end
 
 
 """
@@ -396,6 +401,45 @@ function physicalchanneldata(edfh, channel)
     end
     multiplier = edfh.signalparam[channel].bitvalue
     return digdata .* multiplier
+end
+
+
+"""
+    samplerateusing
+Get sample (sampling) rate (fs) on the channel in sec^-1 units
+"""
+samplerate(edfh, channel) = edfh.signalparam[channel].smp_per_record / edfh.datarecord_duration
+
+
+"""
+    notchfilter
+Notch filter signals in array signals, return filtered signals
+"""
+function notchfilter(signals, fs, notchfreq=60, q = 35)
+    wdo = 2.0notchfreq/fs
+    filtfilt(iirnotch(wdo, wdo/q), signals)
+end
+
+
+"""
+    highpassfilter
+Apply high pass filter to signals, return filtered data
+"""
+function highpassfilter(signals, fs, cutoff=70, order=4)
+    wdo = 2.0cutoff/fs
+    filt = digitalfilter(Highpass(wdo), Butterworth(order))
+    filtfilt(filt, signals)
+end
+
+
+"""
+    lowpassfilter
+Apply low pass filter to signals, return filtered data
+"""
+function lowpassfilter(signals, fs, cutoff=0.7, order=4)
+    wdo = 2.0cutoff/fs
+    filt = digitalfilter(Lowpass(wdo), Butterworth(order))
+    filtfilt(filt, signals)
 end
 
 
@@ -449,12 +493,12 @@ end
 
 
 """ Return which BEDFPlus variable holds the signal data """
-signaldata(edfh) = (edfh.bdf || edfh.bdfplus) ? BDFsignals : EDFsignals
+signaldata(edfh) = (edfh.bdf || edfh.bdfplus) ? edfh.BDFsignals : edfh.EDFsignals
 
 """ Get a slice of the data in the recording from one data entry position to another """
 recordslice(edfh, startpos, endpos) = signaldata(edfh)[startpos:endpos, 1:end]
 
-""" Return how many bytes used per data pont entry: 2 for EDF (16-bit), 3 for BDF (24-bit) data. """
+""" Return how many bytes used per data point entry: 2 for EDF (16-bit), 3 for BDF (24-bit) data. """
 bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
 
 """ Time interval in fractions of a second between individual signal data points """
@@ -502,7 +546,11 @@ function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     (ridx, startpos)
 end
 
-""" Get a set of 2D markers for epochs (sequential window) given epoch duration in seconds """
+"""
+    epochmarkers
+Get a set of (start, stop) positional markers for epochs (sequential windows)
+given an epoch duration in seconds
+"""
 epochmarkers(edfh, secs) = map(t->signalat(edfh,t), 0:secs:edfh.file_duration)
 
 
@@ -1226,10 +1274,10 @@ function addannotation(edfh, onset, duration, description)
 end
 
 
-""" trim whitespace, aka trim in java etc"""
+""" trim whitespace fore and aft, as in trim in java etc"""
 trim(str) = replace(replace(convert(String, str), r"^\s*(\S.*)$", s"\1"), r"(^.*\S)\s*$", s"\1")
 
-""" trimrightzeros trim insignificant decimal places """
+""" trimrightzeros compact number string by trimming nonsignificant decimal places/point when not zero"""
 trimrightzeros(fstr) = reverse(replace(replace(reverse(fstr), r"^0+([^0].+)$", s"\1"), r"^\.(.+)$", s"\1"))
 
 
