@@ -5,5 +5,5 @@ using Base.Test
 tic()
 @time @test include("readtest.jl")
 @time @test include("writetest.jl")
-@time @test include("plottest.jl")
+@time @test include("filtertest.jl")
 toc()
