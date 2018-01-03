@@ -1,5 +1,5 @@
 #=
-@Version: 0.49
+@Version: 0.50
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -10,12 +10,15 @@
 module EDFPlus
 using Core.Intrinsics
 using DSP
+using IterTools
 
 
 export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
-       digitalchanneldata, physicalchanneldata, loadfile, writefile,
-       epoch_iterator, annotation_epoch_iterator, closefile, samplerate,
-       highpassfilter, lowpassfilter, notchfilter
+       loadfile, writefile, closefile, samplerate,
+       epoch_iterator, annotation_epoch_iterator,
+       digitalchanneldata, physicalchanneldata,
+       channeltimesegment, multichanneltimesegment,
+       highpassfilter, lowpassfilter, notchfilter, trim
 
 
 #
@@ -57,7 +60,7 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
 #
 
 
-const VERSION = 0.02
+const VERSION = 0.5
 const MAX_CHANNELS =          512
 const MAX_ANNOTATION_LENGTH = 512
 
@@ -73,7 +76,7 @@ enum for types this package handles. Current format for a file is also /same/
     FileStatus
 enum for type or state of file: type of data detected, whether any errors
 """
-@enum FileStatus EDF EDFPLUS BDF BDFPLUS DISCONTINUOUS READ_ERROR FORMAT_ERROR CLOSED
+@enum FileStatus EDF EDFPLUS BDF BDFPLUS READ_ERROR FORMAT_ERROR CLOSED
 
 
 """
@@ -102,8 +105,8 @@ mutable struct ChannelParam      # this structure contains all the relevant EDF-
   physdimension::String          # physical dimension (uV, bpm, mA, etc.), null-terminated string
   physmax::Float64               # physical maximum, usually the maximum input of the ADC
   physmin::Float64               # physical minimum, usually the minimum input of the ADC
-  digmax::Int                    # digital maximum, usually the maximum output of the ADC, can not not be higher than 32767 for EDF or 8388607 for BDF
-  digmin::Int                    # digital minimum, usually the minimum output of the ADC, can not not be lower than -32768 for EDF or -8388608 for BDF
+  digmax::Int                    # digital maximum, usually the maximum output of the ADC, cannot not be higher than 32767 for EDF or 8388607 for BDF
+  digmin::Int                    # digital minimum, usually the minimum output of the ADC, cannot not be lower than -32768 for EDF or -8388608 for BDF
   smp_per_record::Int            # number of samples of this signal in a datarecord
   prefilter::String              # null-terminated string
   reserved::String               # header reserved ascii text, 32 bytes
@@ -205,10 +208,6 @@ function loadfile(path::String, read_annotations=true)
     if edfh.filetype == FORMAT_ERROR
         throw("Bad EDF/BDF file format at file $path")
     end
-    if edfh.discontinuous
-        edfh.filetype = DISCONTINUOUS
-        throw("discontinuous file type is not yet supported")
-    end
     edfh.writemode = false
     if edfh.edf
         edfh.filetype = EDF
@@ -288,9 +287,8 @@ physical Whether to return data as translated to the physical units, defaults to
 function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                               startsec=0, endsec=edfh.file_duration, physical=true)
     epochs = collect(startsec:epochsecs:endsec)
-    multiplier = edfh.signalparam[channelnumber].bitvalue
     epochwidth = epochs[2] - epochs[1]
-    imap(x -> multichanneltime_segment(edfh,channels,x,x+epochwidth, physical), epochs)
+    imap(x -> multichanneltimesegment(edfh,channels,x,x+epochwidth, physical), epochs)
 end
 
 
@@ -311,27 +309,27 @@ end
 
 
 """
-    channeltime_segment
+    channeltimesegment
 get the channels data between the time points
 """
-function channeltime_segment(edfh, channel, startsec, endsec, physical)
+function channeltimesegment(edfh, channel, startsec, endsec, physical)
     sigdata = signaldata(edfh)
     if startsec >= endsec
         return sigdata[end:1, end:1]  # empty but type correct
     end
     (row1, col1) = signalat(edfh, startsec, channel)
     (row2, col2) = signalat(edfh, endsec, channel)
-    multiplier = edfh.signalparam[channelnumber].bitvalue
+    multiplier = edfh.signalparam[channel].bitvalue
     if row1 == row2
         return physical ? sigdata[row1,col1:col2] .* multiplier : sigdata[row1,col1:col2]
     end
-    startpos = Int(edfh.signalparam[chan].bufoffset / bytesperdatapoint(edfh)) + 1
-    endpos = startpos + edfh.signalparam[chan].smp_per_record - 1
+    startpos = Int(edfh.signalparam[channel].bufoffset / bytesperdatapoint(edfh)) + 1
+    endpos = startpos + edfh.signalparam[channel].smp_per_record - 1
     row1data = sigdata[row1, col1:endpos]
-    rwo2data = sigdata[row2, startpos:col2]
+    row2data = sigdata[row2, startpos:col2]
     if row2 - row1 > 1
         otherdata = sigdata[row1+1:row2-1, startpos:endpos]
-        row2data = vcat(reshape(otherdata, length(otherdata)), rowdata)
+        row2data = vcat(reshape(otherdata, length(otherdata)), row2data)
     end
     if physical
         return vcat(row1data, row2data) .* multiplier
@@ -342,18 +340,13 @@ end
 
 
 """
-    multichanneltime_segment
+    multichanneltimesegment
 Get an multichannel array of lists of datapoints over time segment
 """
-function multichanneltime_segment(edfh, chanlist, startsec, endsec, physical)
-    if edfh.bdf || edfh.bdfplus
-        mdata = Array{Array{Int32,1}}(length(chanlist))
-    else
-        mdata = Array{Array{Int32,1}}(length(chanlist))
-    end
-    fill!(mdata, [])
+function multichanneltimesegment(edfh, chanlist, startsec, endsec, physical)
+    mdata = []
     for chan in chanlist
-        mdata[chan] = vcat(mdata[chan], channeltime_segment(edfh, channel, startsec, endsec, physical))
+        push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical))
     end
     mdata
 end
@@ -503,7 +496,7 @@ bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
 
 """ Time interval in fractions of a second between individual signal data points """
 function datapointinterval(edfh, channel=edfh.mapped_signals[1])
-    edfh.record_duration / edfh.signalparam[channel].smp_per_record
+    edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
 end
 
 
@@ -525,7 +518,7 @@ function recordindexat(edfh, secondsafterstart)
         return edfh.datarecords  # last one is at end
     end
     # for BDF and EDF files, we do not need to check any annotation channel
-    Int(floor(secs / edfh.record_duration)) + 1
+    Int(floor(secs / edfh.datarecord_duration)) + 1
 end
 
 
@@ -537,11 +530,14 @@ in the signal channel matrix, returns that signal data point's 2D position
 """
 function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     ridx = recordindexat(edfh, secondsafter)
-    seconddiff = secondsafter - edfh.record_duration * (ridx - 1)
-    (startpos, endpos) = signalindices(edfh, channel)
-    startpos += Int(floor(seconddiff / datapointinterval(edfh, signalnum)))
+    seconddiff = secondsafter - edfh.datarecord_duration * (ridx - 1)
+    startpos = signalindices(edfh, channel)[1]
+    startpos += Int(floor(seconddiff / datapointinterval(edfh, channel)))
     if startpos > edfh.signalparam[channel].smp_per_record
         startpos = edfh.signalparam[channel].smp_per_record
+    end
+    if startpos < 1
+        startpos = 1
     end
     (ridx, startpos)
 end
@@ -1225,7 +1221,7 @@ end
    annotationtoTAL
 Create a TAL (timestamped annotation list) text entry out of an annotation
 """
-function annotationtobytes(ann)
+function annotationtoTAL(ann)
     txt = trimrightzeros(@sprintf("%-+f", ann.onset))
     if ann.duration != ""
         txt *= "\x15" * ann.duration
