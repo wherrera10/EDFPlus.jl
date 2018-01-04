@@ -147,16 +147,16 @@ mutable struct BEDFPlus                   # signal file data for EDF, BDF, EDF+,
     writemode::Bool                       # true if is intended for writing to file
     version::String                       # version of the file format
     edf::Bool                             # EDF?
-    edfplus::Bool                         # EDF+ ?
+    edfplus::Bool                         # EDF+?
     bdf::Bool                             # BDF?
     bdfplus::Bool                         # BDF+?
-    discontinuous::Bool
+    discontinuous::Bool                   # discontinuous (EDF+D?)
     filetype::FileStatus                  # @enum FileStatus as above
     channelcount::Int                     # total number of EDF signal bands in the file INCLUDING annotation channels
     file_duration::Float64                # duration of the file in seconds expressed as 64-bit floating point
     startdate_day::Int                    # startdate of study, day of month of startdate of study
     startdate_month::Int                  # startdate month
-    startdate_year::Int
+    startdate_year::Int                   # startdate year
     starttime_subsecond::Float64          # starttime offset in seconds, should be < 1 sec in size. Only used by EDFplus and BDFplus
     starttime_second::Int                 # this is in integer seconds, the field above makes it more precise
     starttime_minute::Int
@@ -911,7 +911,7 @@ function readannotations(edfh)
                     onset = parse(Float64, times)
                     duration = ""
                 end
-                if j == 1
+                if j == 1 && i == 1 # first TAL of first record
                     edfh.starttime_subsecond = onset
                 end
                 if length(annottxt) > MAX_ANNOTATION_LENGTH
