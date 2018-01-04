@@ -99,15 +99,15 @@ version() = VERSION
 Parameters for each channel in the EEG record.
 """
 mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
-  label::String                  # label (name) of the signal, null-terminated string
+  label::String                  # label (name) of the signal, eg "C4" if in 10-40 labeling terms
   transducer::String             # signal transducer type
-  physdimension::String          # physical dimension (uV, bpm, mA, etc.), null-terminated string
+  physdimension::String          # physical dimension (uV, bpm, mA, etc.)
   physmax::Float64               # physical maximum, usually the maximum input of the ADC
   physmin::Float64               # physical minimum, usually the minimum input of the ADC
   digmax::Int                    # digital maximum, usually the maximum output of the ADC, cannot not be higher than 32767 for EDF or 8388607 for BDF
   digmin::Int                    # digital minimum, usually the minimum output of the ADC, cannot not be lower than -32768 for EDF or -8388608 for BDF
   smp_per_record::Int            # number of samples of this signal in a datarecord
-  prefilter::String              # null-terminated string
+  prefilter::String              # channel prefiltering settings if any
   reserved::String               # header reserved ascii text, 32 bytes
   offset::Float64                # offset of center of physical data value from center of digital values
   bufoffset::Int                 # bytes from start of record to start of this channel (zero for first channel)
@@ -422,7 +422,7 @@ end
 
 
 """
-    samplerateusing
+    samplerate
 Get sample (sampling) rate (fs) on the channel in sec^-1 units
 """
 samplerate(edfh, channel) = edfh.signalparam[channel].smp_per_record / edfh.datarecord_duration
@@ -751,24 +751,19 @@ function checkfile(edfh)
 
     #=
     from https://www.edfplus.info/specs/edfplus.html#header, December 2017:
-
     The 'local patient identification' field must start with the subfields
          (subfields do not contain, but are separated by, spaces):
-
     - the code by which the patient is known in the hospital administration.
     - sex (English, so F or M).
     - birthdate in dd-MMM-yyyy format using the English 3-character abbreviations
       of the month in capitals. 02-AUG-1951 is OK, while 2-AUG-1951 is not.
     - the patients name.
-
      Any space inside the hospital code or the name of the patient must be replaced
      by a different character, for instance an underscore. For instance, the
      'local patient identification' field could start with:
      MCH-0234567 F 02-MAY-1951 Haagse_Harry.
-
     Subfields whose contents are unknown, not applicable or must be made
     anonymous are replaced by a single character 'X'.
-
     Additional subfields may follow the ones described here.
     =#
     try
@@ -941,6 +936,10 @@ function translate24to16bits(edfh)
     cvrtfactor = minimum(abs(typemax(Int16)/maximum(data)), abs(typemin(Int16)/minimum(data)))
     if cvrtfactor < 1.0
         edfh.EDFsignals = map(x->Int16(floor(x * cvrtfactor)), data)
+        for chan in edfh.mapped_signals
+            chan.physmin *= cvrtfactor
+            chan.physmax *= cvrtfactor
+        end
     else
         edfh.EDFsignals = map(x->Int16(x), data)
     end
@@ -982,7 +981,7 @@ end
 """
 writeEDFrecords
 Helper function for writefile
-Write a record's worth of all channels pf a given record
+Write a record's worth of all channels of a given record
 """
 function writeEDFrecords(edfh, fh)
     if isempty(edfh.EDFsignals)
