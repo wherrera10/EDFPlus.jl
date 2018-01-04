@@ -1,5 +1,5 @@
 #=
-@Version: 0.50
+@Version: 0.51
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -14,7 +14,7 @@ using IterTools
 
 
 export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
-       loadfile, writefile, closefile, samplerate,
+       loadfile, writefile, closefile, samplerate, addannotation,
        epoch_iterator, annotation_epoch_iterator,
        digitalchanneldata, physicalchanneldata,
        channeltimesegment, multichanneltimesegment,
@@ -22,9 +22,8 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
 
 
 #
-# Note that except for some of the data structures and constants, most of this code is
-# a complete rewrite of the C version. Application ports will need different API calls from C.
-#
+# Except for some of the data structures and constants, most of this code is a
+# complete rewrite of the C version. Other C ports will need different API calls.
 #==============================================================================
 * The original EDFlib C code was
 * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Teunis van Beelen
@@ -67,7 +66,7 @@ const MAX_ANNOTATION_LENGTH = 512
 
 """
     DataFormat
-enum for types this package handles. Current format for a file is also /same/
+enum for types this package handles. Current format for a potential translation is also /same/.
 """
 @enum DataFormat bdf bdfplus edf edfplus same
 
@@ -111,7 +110,7 @@ mutable struct ChannelParam      # this structure contains all the relevant EDF-
   prefilter::String              # null-terminated string
   reserved::String               # header reserved ascii text, 32 bytes
   offset::Float64                # offset of center of physical data value from center of digital values
-  bufoffset::Int                 # bytes from start of record to start of this channel
+  bufoffset::Int                 # bytes from start of record to start of this channel (zero for first channel)
   bitvalue::Float64              # physical data value of one unit change in digital value
   annotation::Bool               # true if is an annotation not a binary mapped signal data channel
   ChannelParam() = new("","","",0.0,0.0,0,0,0,"","",0.0,0,0.0,false)
@@ -130,7 +129,7 @@ mutable struct Annotation
     duration::String
     annotation::Array{String,1}
     Annotation() = new(0.0,"",[])
-    Annotation(o,d,arr) = new(o,d,arr)
+    Annotation(o,d,arr) = new(o,d,typeof(arr) == String?[arr]:arr)
 end
 # max size of annotationtext
 const MAX_ANNOTATION_TEXT_LENGTH = 40
@@ -142,21 +141,21 @@ const MIN_ANNOTATION_CHANNEL_LENGTH = 120
     mutable struct BEDFPlus
 Data struct for EDF, EDF+, BDF, and BDF+ EEG type signal files.
 """
-mutable struct BEDFPlus                    # signal file data for EDF, BDF, EDF+, and BDF+ files
-    ios                                    # file handle for the file containing the data
-    path::String
-    writemode::Bool
-    version::String
-    edf::Bool
-    edfplus::Bool
-    bdf::Bool
-    bdfplus::Bool
+mutable struct BEDFPlus                   # signal file data for EDF, BDF, EDF+, and BDF+ files
+    ios                                   # file handle for the file containing the data
+    path::String                          # file pathname
+    writemode::Bool                       # true if is intended for writing to file
+    version::String                       # version of the file format
+    edf::Bool                             # EDF?
+    edfplus::Bool                         # EDF+ ?
+    bdf::Bool                             # BDF?
+    bdfplus::Bool                         # BDF+?
     discontinuous::Bool
     filetype::FileStatus                  # @enum FileStatus as above
     channelcount::Int                     # total number of EDF signal bands in the file INCLUDING annotation channels
     file_duration::Float64                # duration of the file in seconds expressed as 64-bit floating point
-    startdate_day::Int
-    startdate_month::Int
+    startdate_day::Int                    # startdate of study, day of month of startdate of study
+    startdate_month::Int                  # startdate month
     startdate_year::Int
     starttime_subsecond::Float64          # starttime offset in seconds, should be < 1 sec in size. Only used by EDFplus and BDFplus
     starttime_second::Int                 # this is in integer seconds, the field above makes it more precise
@@ -249,19 +248,34 @@ end
 """
     writefile
 Write to data in the edfh struct to the file indicated by newpath
-Returns the file handle of the file writte opened for reading
+Returns the file handle of the file written, opened for reading
+NOTE: The header needs to be completely specified at function start except for
+the final number of records, which will be updated after all data records
+are written. For a system that is recording the data as it is written, the
+acquire(edfh) function should write the data according the the header parameters.
 """
 function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
-    if sigformat == same
-        if edfh.bdf || edfh.bdfplus
-            write_BDFplus(edfh, newpath)
-        else
-            write_EDFplus(edfh, newpath)
+    if sigformat == same || sigformat == bdfplus || sigformat == edfplus
+        oldcounted = edfh.datarecords
+        fh = open(newpath,"w+")
+        written = writeheader(edfh, fh)
+        acquirewritten = acquire(edfh)
+        # if we did an acquire, the acquire function wrote the channel data
+        if acquirewritten > 0
+            written += acquirewritten
+            newcounted = edfh.datarecords
+            seekstart(fh)
+            seek(fh, 236)
+            writeleftjust(fh, edfh.datarecords, 8)
+        else # otherwise write what is there in memory for writing
+            written += (edfh.edfplus || edfh.edf) ? writeEDFrecords(edfh, fh) :
+                                                    writeBDFrecords(edfh, fh)
         end
-    elseif sigformat == bdfplus
-        write_BDFplus(edfh, newpath)
-    elseif sigformat == edfplus
-        write_EBDFplus(edfh, newpath)
+        # close handle, reopen as a read handle, load/check file, return new handle
+        close(fh)
+        newedfh = loadfile(newpath, true)
+        println("$newpath written successfully, $written bytes.")
+        newedfh
     elseif sigformat == edf
         warn("EDF non-plus file writing not yet set up")
     elseif sigformat == bdf
@@ -286,7 +300,7 @@ physical Whether to return data as translated to the physical units, defaults to
 """
 function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                               startsec=0, endsec=edfh.file_duration, physical=true)
-    epochs = collect(startsec:epochsecs:endsec)
+    epochs = collect(startsec:epochsecs:endsec)[1:end-1]
     epochwidth = epochs[2] - epochs[1]
     imap(x -> multichanneltimesegment(edfh,channels,x,x+epochwidth, physical), epochs)
 end
@@ -298,14 +312,24 @@ Return an iterator for a group of annotations for a given epoch as in epoch_iter
 """
 function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file_duration)
     epochs = collect(startsec:epochsecs:endsec)
+    achan = edfh.annotationchannel
     if length(epochs) < 2
-        epochmarkers = [signalat(edfh,startsec), signalat(edfh,endsec)]
+        markers = [signalat(edfh,startsec, achan), signalat(edfh,endsec, achan)]
     else
-        epochmarkers = map(t->signalat(edfh,t), startsec:epochsecs:endsec)
+        markers = map(t->signalat(edfh,t, achan), epochs)
     end
-    epochwidth = epochmarkers[2] - epochmarkers[1]
-    imap(x -> edfh.annotations[x:x+epochwidth], epochmarkers)
+    epochwidth = markers[2][1] - markers[1][1]
+    imap(x -> edfh.annotations[x[1]:x[1]+epochwidth], markers[1:end-1])
 end
+
+
+"""
+    dummyacquire
+Dummy function for call in writefile for optional acquire function
+If using package for data acquistion will need to custom write the acquire function
+for your calls to writefile
+"""
+dummyacquire(edfh) = 0
 
 
 """
@@ -317,8 +341,8 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     if startsec >= endsec
         return sigdata[end:1, end:1]  # empty but type correct
     end
-    (row1, col1) = signalat(edfh, startsec, channel)
-    (row2, col2) = signalat(edfh, endsec, channel)
+    row1, col1 = signalat(edfh, startsec, channel)
+    row2, col2 = signalat(edfh, endsec, channel)
     multiplier = edfh.signalparam[channel].bitvalue
     if row1 == row2
         return physical ? sigdata[row1,col1:col2] .* multiplier : sigdata[row1,col1:col2]
@@ -329,7 +353,7 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     row2data = sigdata[row2, startpos:col2]
     if row2 - row1 > 1
         otherdata = sigdata[row1+1:row2-1, startpos:endpos]
-        row2data = vcat(reshape(otherdata, length(otherdata)), row2data)
+        row2data = vcat(otherdata[:], row2data)
     end
     if physical
         return vcat(row1data, row2data) .* multiplier
@@ -373,7 +397,7 @@ channelnumber the channel number in the records
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
     data = signaldata(edfh)[:, span[1]:span[2]]
-    reshape(data, length(data))
+    data[:]
 end
 
 
@@ -489,7 +513,7 @@ end
 signaldata(edfh) = (edfh.bdf || edfh.bdfplus) ? edfh.BDFsignals : edfh.EDFsignals
 
 """ Get a slice of the data in the recording from one data entry position to another """
-recordslice(edfh, startpos, endpos) = signaldata(edfh)[startpos:endpos, 1:end]
+recordslice(edfh, startpos, endpos) = signaldata(edfh)[startpos:endpos, :]
 
 """ Return how many bytes used per data point entry: 2 for EDF (16-bit), 3 for BDF (24-bit) data. """
 bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
@@ -526,7 +550,7 @@ end
     signalat
 Get the position in the signal data of the data point at or closest after a
 given time from recording start. Translates a value in seconds to a position
-in the signal channel matrix, returns that signal data point's 2D position
+in the signal channel matrix, returns that signal data point's 2D position as list
 """
 function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     ridx = recordindexat(edfh, secondsafter)
@@ -1004,68 +1028,6 @@ end
 
 
 """
-    dummyacquire
-Dummy function for call in writefile for optional acquire function
-If using package for data acquistion will need to custom write the acquire function
-for your calls to writefile
-"""
-dummyacquire(edfh) = 0
-
-
-"""
-    write_EDFPlus
-Write an EDFPlus format file
-Helper file for writefile
-Returns a new signal file's edfh struct
-NOTE: Header needs to be completely specified at function start except for
-the final number of records, which will be updated after all data records
-are written. For a system that is recording the data as it is written, the
-acquire(edfh) function should write the data according the the header parameters.
-"""
-function write_EDFplus(edfh, newpath, acquire=dummyacquire)
-    oldcounted = edfh.datarecords
-    fh = open(newpath,"w+")
-    written = writeheader(edfh, fh)
-    acquire(edfh)
-    newcounted = edfh.datarecords
-    written += writeEDFrecords(edfh, fh)
-    if newcounted > 0 && newcounted > oldcounted
-        seekstart(fh)
-        seek(fh, 236)
-        writeleftjust(fh, edfh.datarecords, 8)
-    end
-    # close handle, reopen as a read handle, load/check file, close again
-    close(fh)
-    newedfh = loadfile(newpath, true)
-    println("$newpath written successfully, $written bytes.")
-    newedfh
-end
-
-
-"""
-    write_BDFPlus
-Write a BDFPlus file
-Helper function for writefile
-Returns a new signal file's edfh struct
-See write_EDFplus function notes
-"""
-function write_BDFplus(edfh, newpath, acquire=dummyacquire)
-    fh = open(newpath,"w")
-    written = writeheader(edfh, fh)
-    acquire(edfh)
-    recordswritten = writeBDFrecords(edfh, fh)
-    seekstart(fh)
-    seek(fh, edfh.headersize)
-    writeleftjust(fh, recordswritten)
-    # close handle, reopen as a read handle, check header
-    close(fh)
-    newedfh = loadfile(newpath, true)
-    println("$newpath written successfully, $written bytes.")
-    newedfh
-end
-
-
-"""
     writeheader
 Helper function for writefile
 """
@@ -1226,42 +1188,66 @@ function annotationtoTAL(ann)
     if ann.duration != ""
         txt *= "\x15" * ann.duration
     end
-    txt *= "\x14" * ann.annotation * "\x14\x00"
+    if length(ann.annotation) > 1
+        anntxt = join(ann.annotation, "\x14")
+    else
+        anntxt = ann.annotation[1]
+    end
+    txt *= "\x14" * anntxt * "\x14\x00"
     txt
 end
 
 
 """
     addannotation
-Add an annotation at the given onset timepoint
+Add an annotation at the given onset timepoint IF there is room
 Note :description is a test string, not an array argument here
 """
 function addannotation(edfh, onset, duration, description)
-    newannot = EDFAnnotation()
-    newannot.onset = onset
+    if isempty(edfh.annotations) && edfh.annotationchannel == 0
+        throw("No annotation channels in file")
+    end
     if typeof(duration) != String
         duration = "$duration"
     end
-    newannot.duration = duration
-    if length(description) > EDFLIB_WRITE_MAX_ANNOTATION_LEN
-        description = description[1:EDFLIB_WRITE_MAX_ANNOTATION_LEN]
-    end
-    newannot.annotation = [latintoacsii(replace(description, r"[\0-\x1f]", "."))]
-    neartimeindex = recordindexat(edfh, onset)
-    if isempty(edfh.annotations) && edfh.annotationchannel == 0
-        throw("No annotation channels in file")
+    if typeof(description) <: Array
+        if length(description) > 1
+            anntxt = join(description, "\x14")
+        else
+            anntxt = description[1]
+        end
     else
-        # add to the signal record if it fits somewhere (it should)
-        (startpos,endpos) = signalindices(edfh, annotationchannel)
-        toadd = annotationtoTAL(newannot)
-        additionalbytes = length(toadd)
-        for recordnum in neartimeindex:edfh.datarecords
-            channbytes = reshape(UInt8, signaldata(edfh)[recordnum, startpos:endpos])
-            addindex = findlast(channbytes)
-            if addidx > 0 && additionalbytes < edfh.recordsize - addindex
-                channbytes[addindex+1:addindex+additionalbytes] .= toadd
-                # add to that annotation list as well
-                annotations[recordnum] = vcat(annotations[recordnum], newannot)
+       anntxt = description
+    end
+    if length(anntxt) > MAX_ANNOTATION_LENGTH
+        anntxt = anntxt[1:MAX_ANNOTATION_LENGTH]
+    end
+    anntxt = latintoascii(replace(anntxt, r"[\x00-\x13]", "."))
+    newannot = Annotation(onset, duration, anntxt)
+    neartimeindex = recordindexat(edfh, onset)
+    toadd = annotationtoTAL(newannot)
+    additionalbytes = length(toadd)
+    iwidth = bytesperdatapoint(edfh)
+    (startpos,endpos) = signalindices(edfh, edfh.annotationchannel)
+    chanlen = iwidth*(endpos-startpos+1)
+    if additionalbytes > chanlen - 6
+        warn("TAL is too large for adding to a channel of length $chanlen bytes")
+    else
+        for recordnum in neartimeindex:edfh.datarecords-1
+            ints = (signaldata(edfh)[recordnum, startpos:endpos])[:]
+            ctxt = reinterpret(UInt8, ints)
+            addindex = findlast(ctxt) + 1
+            if addindex > 0 && addindex + additionalbytes < length(ctxt)
+                ctxt[addindex+1:addindex+additionalbytes] .= Array{UInt8,1}(toadd)
+                if iwidth == 2
+                    signaldata(edfh)[recordnum, startpos:endpos] = reinterpret(Int16, ctxt)
+                else
+                    for k in 1:3:length(ctxt)-1
+                        signaldata[recordnum, startpos] = reinterpret(Int24, ctxt[k:k+2])
+                        startpos += 1
+                    end
+                end
+                edfh.annotations[recordnum] = vcat(edfh.annotations[recordnum], newannot)
                 break
             end
         end
