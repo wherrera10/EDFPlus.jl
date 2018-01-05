@@ -1,5 +1,5 @@
 #=
-@Version: 0.51
+@Version: 0.52
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -159,7 +159,7 @@ mutable struct BEDFPlus                   # signal file data for EDF, BDF, EDF+,
     startdate_year::Int                   # startdate year
     starttime_subsecond::Float64          # starttime offset in seconds, should be < 1 sec in size. Only used by EDFplus and BDFplus
     starttime_second::Int                 # this is in integer seconds, the field above makes it more precise
-    starttime_minute::Int
+    starttime_minute::Int                 # startdate and time, minutes
     starttime_hour::Int                   # 0 to 23, midnight is 00:00:00
     # next 11 fields are for EDF+ and BDF+ files only
     patient::String                       # contains patientfield of header, is always empty when filetype is EDFPLUS or BDFPLUS
@@ -554,7 +554,7 @@ in the signal channel matrix, returns that signal data point's 2D position as li
 """
 function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     ridx = recordindexat(edfh, secondsafter)
-    seconddiff = secondsafter - edfh.datarecord_duration * (ridx - 1)
+    seconddiff = secondsafter - edfh.datarecord_duration * ridx
     startpos = signalindices(edfh, channel)[1]
     startpos += Int(floor(seconddiff / datapointinterval(edfh, channel)))
     if startpos > edfh.signalparam[channel].smp_per_record
@@ -1264,10 +1264,11 @@ trimrightzeros(fstr) = reverse(replace(replace(reverse(fstr), r"^0+([^0].+)$", s
 
 """
     writeleftjust
-Write a string to a file in the leftmost portion of chars written,
+Write a stringified object to a file in the leftmost portion of chars written,
 filling with fillchar to len length as needed, truncate if too long for field
 """
-function writeleftjust(fh, str::String, len, fillchar=' ')
+function writeleftjust(fh, x, len, fillchar=' ')
+    str = "$x"
     written = 0
     strlen = length(str)
     if strlen > len
@@ -1285,12 +1286,6 @@ function writeleftjust(fh, str::String, len, fillchar=' ')
     end
     written
 end
-
-""" write an integer with writeleftjust """
-writeleftjust(fh, n::Int, len, fillchar=' ') = writeleftjust(fh, "$n", len, fillchar)
-
-""" write a floating point number with writeleftjust """
-writeleftjust(fh, x::Float64, len, fillchar=' ') = writeleftjust(fh, "$x", len, fillchar)
 
 
 """ map table for traslation of latin extended ascii to plain ascii chars """
