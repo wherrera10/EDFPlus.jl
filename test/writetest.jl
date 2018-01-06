@@ -14,4 +14,12 @@ newedfh = writefile(edfh, "NEWedfplustestfile.edf")
 @test size(newedfh.EDFsignals) == sz
 
 
+bdfh = loadfile("samplefrombiosemicom.bdf")
+bsz = size(bdfh.BDFsignals)
+@test bsz == (60, 34816)
+
+newbdfh = writefile(bdfh, "NEWsamplefrombiosemicom.edf")
+@test size(newbdfh.BDFsignals) == bsz
+
+
 true
