@@ -6,9 +6,11 @@ edfh = loadfile("EDFPlusTestFile.edf")
 sz = size(edfh.EDFsignals)
 @test sz == (20010,601)
 
-ann = Annotation(61.04, "", "NotedThis")
+eann = Annotation()
+@test eann.onset == 0.0
+ann = Annotation(61.04, "", "They said schöner")
 addannotation(edfh, ann.onset, ann.duration, ann.annotation)
-
+EDFPlus.latintoascii("")
 
 newedfh = writefile(edfh, "NEWedfplustestfile.edf")
 @test size(newedfh.EDFsignals) == sz
