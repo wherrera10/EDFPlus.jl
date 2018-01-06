@@ -1,6 +1,6 @@
 # EDFPlus.jl
 
-[![Build status](https://ci.appveyor.com/api/projects/status/cfw6pe03rfn9qsoo?svg=true)](https://ci.appveyor.com/project/wherrera10/edfplus)
+[![Coverage Status](https://coveralls.io/repos/github/wherrera10/EDFPlus/badge.svg?branch=master)](https://coveralls.io/github/wherrera10/EDFPlus?branch=master)
 
 [![Build Status](https://travis-ci.org/wherrera10/EDFPlus.svg?branch=master)](https://travis-ci.org/wherrera10/EDFPlus)
 
