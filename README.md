@@ -6,7 +6,7 @@
 
 [![Coverage Status](https://coveralls.io/repos/github/wherrera10/EDFPlus/badge.svg?branch=master)](https://coveralls.io/github/wherrera10/EDFPlus?branch=master)
 
-Julia for handling BDF+ and EDF+ EEG and similar signal data files..
+Julia for handling BDF+ and EDF+ EEG and similar signal data files.
 
 Heavily influenced by Teunis van Beelen's C library, edflib.
 
