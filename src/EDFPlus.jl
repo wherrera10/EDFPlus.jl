@@ -1,5 +1,5 @@
 #=
-@Version: 0.52
+@Version: 0.53
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -101,7 +101,7 @@ Parameters for each channel in the EEG record.
 mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
   label::String                  # label (name) of the signal, eg "C4" if in 10-40 labeling terms
   transducer::String             # signal transducer type
-  physdimension::String          # physical dimension (uV, bpm, mA, etc.)
+  physdimension                  # physical dimension (uV, bpm, mA, etc.)
   physmax::Float64               # physical maximum, usually the maximum input of the ADC
   physmin::Float64               # physical minimum, usually the minimum input of the ADC
   digmax::Int                    # digital maximum, usually the maximum output of the ADC, cannot not be higher than 32767 for EDF or 8388607 for BDF
@@ -495,7 +495,7 @@ function readdata(edfh)
             cbuf = read(edfh.ios, (edfh.signalparam[j].smp_per_record * bytesperdatapoint(edfh)))
             if edfh.bdf || edfh.bdfplus
                 for k in 1:3:length(cbuf)-1
-                    edfh.BDFsignals[i,columnstart] = Int32(reinterpret(Int24, cbuf[k:k+2])[1])
+                    edfh.BDFsignals[i,columnstart] = Int(reinterpret(Int24, cbuf[k:k+2])[1])
                     columnstart += 1
                 end
             else
@@ -635,6 +635,8 @@ function checkfile(edfh)
                 edfh.filetype = EDFPLUS
                 edfh.edfplus = true
                 edfh.discontinuous = true
+            else
+                edfh.edfplus = false
             end
         elseif edfh.bdf
             if subtype == "BDF+C"
@@ -644,6 +646,8 @@ function checkfile(edfh)
                 edfh.filetype = BDFPLUS
                 edfh.bdfplus = true
                 edfh.discontinuous = true
+            else
+                edfh.bdfplus = false
             end
         end
         throwifhasforbiddenchars(hdrbuf[237:244])
@@ -668,7 +672,6 @@ function checkfile(edfh)
         edfh.filetype = FORMAT_ERROR
         return edfh
     end
-
     # process the signal characteristics in the header after reading header into hdrbuf
     seekstart(edfh.ios)
     edfh.recordsize = 0
@@ -969,10 +972,10 @@ write a BDF record's worth of a signal channel at given record and channel numbe
 """
 function writeBDFsignalchannel(edfh,fh, record, channel)
     (startpos, endpos) = signalindices(edfh, channel)
-    signals = edfh.BDFsignals[record,startpos:endpos]
+    signals = edfh.BDFsignals[record,startpos:endpos][:]
     written = 0
-    for i in signals
-        written += writei24(fh, Int24(signals[i]))
+    for i in 1:length(signals)
+        written += writei24(fh, Int24(Int(signals[i])))
     end
     written
 end
@@ -1054,7 +1057,9 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
         written += write(fh, b"\xffBIOSEMI")
     end
     pidbytes = edfh.patientcode == "" ? "X " : replace(edfh.patientcode, " ", "_") * " "
-    if edfh.gender[1] == 'M'
+    if edfh.gender == ""
+        pidbyes = ""
+    elseif edfh.gender[1] == 'M'
         pidbytes *= "M "
     elseif edfh.gender[1] == 'F'
         pidbytes *= "F "
@@ -1117,11 +1122,17 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     hdsize = Int((channelcount + 1) * 256)           # bytes in header
     written += writeleftjust(fh, hdsize, 8)
 
-    if edfh.edf
-        written += writeleftjust(fh, "EDF+C", 44)
-    else
+    if edfh.edfplus
+        if edfh.discontinuous
+            written += writeleftjust(fh, "EDF+D", 44)
+        else        
+            written += writeleftjust(fh, "EDF+C", 44)
+        end
+    elseif edfh.bdfplus
         written += writeleftjust(fh, "BDF+C", 44)
-    end
+    else
+        written += writeleftjust(fh, "     ", 44)
+    end    
     # header initialized to -1 in duration in case data is not finalized yet
     # This must be updated when final channel data is written.
     if edfh.datarecords > 0
