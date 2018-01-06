@@ -1,5 +1,5 @@
 #=
-@Version: 0.53
+@Version: 0.54
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -87,7 +87,7 @@ Cache these after reading as Int32 to fit typical LLVM CPU registers
 primitive type Int24 24 end
 Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
 Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
-readi24(stream::IO, Int24) = (bytes = read(stream, UInt8, (3)); reinterpret(Int24, bytes)[1])
+# readi24(stream::IO, Int24) = (bytes = read(stream, UInt8, (3)); reinterpret(Int24, bytes)[1])
 writei24(stream::IO, x::Int24) = (bytes = reinterpret(UInt8,[x]); write(stream, bytes))
 
 
@@ -235,8 +235,8 @@ function loadfile(path::String, read_annotations=true)
         # EDF+ and BDF+ use different ID information so blank other fielsds
         edfh.patient = ""
         edfh.recording = ""
-        if read_annotations && readannotations(edfh) < 0
-            throw("Errors in annotations in file at $path")
+        if read_annotations
+            readannotations(edfh)
         end
     end
     readdata(edfh)
@@ -277,9 +277,11 @@ function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
         println("$newpath written successfully, $written bytes.")
         newedfh
     elseif sigformat == edf
-        warn("EDF non-plus file writing not yet set up")
+        warn("Writing file to $newpath as an EDF compatible EDF+ file.")
+        writefile(edfh, newpath, acquire=acquire, sigformat=edfplus)
     elseif sigformat == bdf
-        warn("BDF non-plus file writing not yet set up")
+        warn("Writing file to $newpath as a BDF compatible BDF+ file.")
+        writefile(edfh, newpath, acquire=acquire, sigformat=bdfplus)
     else
         throw("Unknown signal file write format request: $sigformat")
     end
@@ -416,8 +418,7 @@ function physicalchanneldata(edfh, channel)
     if length(digdata) < 1
         return digdata
     end
-    multiplier = edfh.signalparam[channel].bitvalue
-    return digdata .* multiplier
+    digdata * edfh.signalparam[channel].bitvalue
 end
 
 
@@ -542,7 +543,7 @@ function recordindexat(edfh, secondsafterstart)
         return edfh.datarecords  # last one is at end
     end
     # for BDF and EDF files, we do not need to check any annotation channel
-    Int(floor(secs / edfh.datarecord_duration)) + 1
+    Int(floor(secondsafterstart / edfh.datarecord_duration)) + 1
 end
 
 
@@ -553,17 +554,14 @@ given time from recording start. Translates a value in seconds to a position
 in the signal channel matrix, returns that signal data point's 2D position as list
 """
 function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
-    ridx = recordindexat(edfh, secondsafter)
-    seconddiff = secondsafter - edfh.datarecord_duration * ridx
+    row = recordindexat(edfh, secondsafter)
+    seconddiff = secondsafter - edfh.datarecord_duration * (row-1)
     startpos = signalindices(edfh, channel)[1]
-    startpos += Int(floor(seconddiff / datapointinterval(edfh, channel)))
-    if startpos > edfh.signalparam[channel].smp_per_record
-        startpos = edfh.signalparam[channel].smp_per_record
+    col = startpos + Int(floor(seconddiff / datapointinterval(edfh, channel)))
+    if col > startpos + edfh.signalparam[channel].smp_per_record
+        startpos = startpos + edfh.signalparam[channel].smp_per_record
     end
-    if startpos < 1
-        startpos = 1
-    end
-    (ridx, startpos)
+    (row, col)
 end
 
 """
@@ -1125,14 +1123,14 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     if edfh.edfplus
         if edfh.discontinuous
             written += writeleftjust(fh, "EDF+D", 44)
-        else        
+        else
             written += writeleftjust(fh, "EDF+C", 44)
         end
     elseif edfh.bdfplus
         written += writeleftjust(fh, "BDF+C", 44)
     else
         written += writeleftjust(fh, "     ", 44)
-    end    
+    end
     # header initialized to -1 in duration in case data is not finalized yet
     # This must be updated when final channel data is written.
     if edfh.datarecords > 0
@@ -1328,12 +1326,12 @@ Helper function for writefile related functions
 """
 function latintoascii(str)
     len = length(str)
-    if len < 1
-        return str
-    else
+    if len >= 1
         for i in 1:len
             if haskey(latin_dict, str[i])
-                str[i] = latin_dict[str[i]]
+                arr = split(str, "")
+                arr[i] = string(latin_dict[str[i]])
+                str = join(arr, "")
             end
         end
     end
