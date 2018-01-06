@@ -6,7 +6,7 @@ edfh = loadfile("EDFPlusTestFile.edf")
 
 @test edfh.gender == "Female"
 @test edfh.annotationchannel == 30
-@ test edfh.filetype == FileStatus(1)
+@test edfh.filetype == FileStatus(1)
 
 fs = samplerate(edfh,1)
 f1 = EDFPlus.recordslice(edfh, 21, 22)[1,:]
@@ -34,5 +34,14 @@ end
 
 closefile(edfh)
 @test edfh.filetype == FileStatus(6)
+
+
+bdfh = loadfile("samplefrombiosemicom.bdf")
+
+@test "$(bdfh.filetype)" == "BDF" && bdfh.filetype == FileStatus(2)
+@test trim(bdfh.signalparam[4].label) == "A4"
+@test bdfh.startdate_year == 2001
+@test bdfh.signalparam[end].physdimension == "Boolean"
+@test EDFPlus.recordslice(bdfh, 4, 14)[1,end-3] == 1835263
 
 true
