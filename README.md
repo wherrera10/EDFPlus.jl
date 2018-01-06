@@ -4,7 +4,7 @@
 
 [![Build Status](https://travis-ci.org/wherrera10/EDFPlus.svg?branch=master)](https://travis-ci.org/wherrera10/EDFPlus)
 
-[![Coverage Status](https://coveralls.io/repos/github/wherrera10/EDFPlus/badge.svg?branch=master)](https://coveralls.io/github/wherrera10/EDFPlus?branch=master)
+[![Coverage Status](https://coveralls.io/repos/github/wherrera10/EDFPlus/badge.svg?branch=master&service=github)](https://coveralls.io/github/wherrera10/EDFPlus?branch=master&service=github)
 
 Julia for handling BDF+ and EDF+ EEG and similar signal data files.
 
