@@ -256,14 +256,41 @@ acquire(edfh) function should write the data according the the header parameters
 """
 function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
     if sigformat == same || sigformat == bdfplus || sigformat == edfplus
-        oldcounted = edfh.datarecords
+        if sigformat == bdfplus && edfh.edfplus
+            translate16to24bits(edfh)
+            edfh.edfplus = false
+            edfh.bdfplus = true
+            edfh.edf = false
+            edfh.bdf = false
+            edfh.filetype = BDFPLUS
+            boff = 0
+            for chan in edfh.signalparam
+                chan.digmin = -8388608
+                chan.digmax = 8388607
+                chan.bufoffset = boff
+                boff += chan.smp_per_record * 3
+            end
+        elseif sigformat == edfplus && edfh.bdfplus
+            translate24to16bits(edfh)
+            edfh.edfplus = true
+            edfh.bdfplus = false
+            edfh.edf = false
+            edfh.bdf = false
+            edfh.filetype = EDFPLUS
+            boff = 0
+            for chan in edfh.signalparam
+                chan.digmin = -32768
+                chan.digmax = 32767
+                chan.bufoffset = boff
+                boff += chan.smp_per_record * 2
+            end
+        end
         fh = open(newpath,"w+")
         written = writeheader(edfh, fh)
         acquirewritten = acquire(edfh)
         # if we did an acquire, the acquire function wrote the channel data
         if acquirewritten > 0
             written += acquirewritten
-            newcounted = edfh.datarecords
             seekstart(fh)
             seek(fh, 236)
             writeleftjust(fh, edfh.datarecords, 8)
@@ -383,7 +410,7 @@ end
 Get a pair of indices of a channel's bytes within each of the data records
 """
 function signalindices(edfh, channelnumber)
-    startcol = Int(edfh.signalparam[channelnumber].bufoffset / bytesperdatapoint(edfh)) + 1
+    startcol = Int(floor(edfh.signalparam[channelnumber].bufoffset / bytesperdatapoint(edfh))) + 1
     endcol = startcol + edfh.signalparam[channelnumber].smp_per_record - 1
     (startcol, endcol)
 end
@@ -629,9 +656,16 @@ function checkfile(edfh)
             if subtype == "EDF+C"
                 edfh.filetype = EDFPLUS
                 edfh.edfplus = true
+                edfh.edf = false
+                edfh.bdf = false
+                edfh.bdfplus = false
+                edfh.discontinuous = false
             elseif subtype == "EDF+D"
                 edfh.filetype = EDFPLUS
                 edfh.edfplus = true
+                edfh.edf = false
+                edfh.bdf = false
+                edfh.bdfplus = false
                 edfh.discontinuous = true
             else
                 edfh.edfplus = false
@@ -640,9 +674,16 @@ function checkfile(edfh)
             if subtype == "BDF+C"
                 edfh.filetype = BDFPLUS
                 edfh.bdfplus = true
+                edfh.edfplus = false
+                edfh.edf = false
+                edfh.bdf = false
+                edfh.discontinuous = false
             elseif subtype == "BDF+D"
                 edfh.filetype = BDFPLUS
                 edfh.bdfplus = true
+                edfh.edfplus = false
+                edfh.edf = false
+                edfh.bdf = false
                 edfh.discontinuous = true
             else
                 edfh.bdfplus = false
@@ -816,7 +857,6 @@ function checkfile(edfh)
     =#
             subfield = split(trim(edfh.recording))
             if length(subfield) < 5
-                println("subfield is $subfield")
                 throw("Not enough fields in plus recording data")
             elseif subfield[1] != "Startdate" || (subfield[2] != "X" &&
                  (!((dor = Date(subfield[2], "dd-uuu-yyyy")) isa Date)) ||
@@ -934,22 +974,59 @@ Helper function for writefile
 """
 function translate24to16bits(edfh)
     data = edfh.BDFsignals
-    cvrtfactor = minimum(abs(typemax(Int16)/maximum(data)), abs(typemin(Int16)/minimum(data)))
+    cvrtfactor = min(abs(32767/maximum(data)), abs(-32768/minimum(data)))
     if cvrtfactor < 1.0
         edfh.EDFsignals = map(x->Int16(floor(x * cvrtfactor)), data)
         for chan in edfh.mapped_signals
-            chan.physmin *= cvrtfactor
-            chan.physmax *= cvrtfactor
+            edfh.signalparam[chan].physmin /= cvrtfactor
+            edfh.signalparam[chan].physmax /= cvrtfactor
         end
     else
         edfh.EDFsignals = map(x->Int16(x), data)
+    end
+    achan = edfh.annotationchannel
+    startcol = Int(edfh.signalparam[achan].bufoffset / 3) + 1
+    endcol = startcol + edfh.signalparam[achan].smp_per_record - 1
+    for rec in 1:edfh.datarecords
+        arr = b""
+        oby = reinterpret(UInt8, edfh.BDFsignals[rec, startcol:endcol])
+        for (i, cha) in enumerate(oby)
+            if i % 4 != 0
+                push!(arr, cha)
+            end
+        end
+        newspace = endcol - startcol + 1
+        if length(arr) > 2newspace
+            arr = arr[1:2newspace]
+            arr[end] = '\x00'
+        else
+            while length(arr) < 2newspace
+                push!(arr, '\x00')
+            end
+        end
+        edfh.EDFsignals[rec, startcol:endcol] .= reinterpret(Int16, arr)
     end
 end
 
 
 """ Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile """
-translate16to24bits(edfh) = (edfh.BDFsignals = map(x->Int32(x), edfh.EDFsignals))
-
+function translate16to24bits(edfh)
+    edfh.BDFsignals = map(x->Int32(x), edfh.EDFsignals)
+    chan = edfh.annotationchannel
+    startcol = Int(edfh.signalparam[chan].bufoffset / 2) + 1
+    endcol = startcol + edfh.signalparam[chan].smp_per_record - 1
+    for rec in 1:edfh.datarecords
+        arr = Array{Int32,1}()
+        oby = reinterpret(UInt8, edfh.EDFsignals[rec, startcol:endcol][:])
+        for k in 1:3:length(oby) - 1
+            push!(arr, reinterpret(Int32,[oby[k], oby[k+1], oby[k+2], UInt8(0)])[1])
+        end
+        while length(arr) < endcol - startcol + 1
+            push!(arr,0)
+        end
+        edfh.BDFsignals[rec, startcol:endcol] .= arr
+    end
+end
 
 """
     writeEDFsignalchannel
@@ -1049,7 +1126,7 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
         end
     end
     seekstart(fh)
-    if(edfh.edf)
+    if edfh.edf || edfh.edfplus
         written += write(fh, "0       ")
     else
         written += write(fh, b"\xffBIOSEMI")
@@ -1147,9 +1224,9 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     written += writeleftjust(fh, channelcount, 4)
     for i in 1:channelcount
         if edfh.signalparam[i].annotation
-            if edfh.edf
+            if edfh.edfplus
                 written += write(fh, "EDF Annotations ")
-            else
+            elseif edfh.bdfplus
                 written += write(fh, "BDF Annotations ")
             end
         else
