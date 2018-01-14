@@ -14,7 +14,7 @@ using IterTools
 
 
 export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
-       loadfile, writefile, closefile, samplerate, addannotation,
+       loadfile, writefile!, closefile!, samplerate, addannotation!,
        epoch_iterator, annotation_epoch_iterator,
        digitalchanneldata, physicalchanneldata,
        channeltimesegment, multichanneltimesegment,
@@ -99,7 +99,7 @@ version() = VERSION
 Parameters for each channel in the EEG record.
 """
 mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
-  label::String                  # label (name) of the signal, eg "C4" if in 10-40 labeling terms
+  label::String                  # label (name) of the signal, eg "C4" if in 10-20 labeling terms
   transducer::String             # signal transducer type
   physdimension                  # physical dimension (uV, bpm, mA, etc.)
   physmax::Float64               # physical maximum, usually the maximum input of the ADC
@@ -203,7 +203,7 @@ function loadfile(path::String, read_annotations=true)
     fh = open(path, "r")
     edfh.path = path
     edfh.ios = fh
-    checkfile(edfh)
+    checkfile!(edfh)
     if edfh.filetype == FORMAT_ERROR
         throw("Bad EDF/BDF file format at file $path")
     end
@@ -232,32 +232,33 @@ function loadfile(path::String, read_annotations=true)
         edfh.equipment = ""
         edfh.recording_additional = ""
     else
-        # EDF+ and BDF+ use different ID information so blank other fielsds
+        # EDF+ and BDF+ use different ID information so blank other fields
         edfh.patient = ""
         edfh.recording = ""
         if read_annotations
-            readannotations(edfh)
+            readannotations!(edfh)
         end
     end
-    readdata(edfh)
+    readdata!(edfh)
     edfh.path = path
     edfh
 end
 
 
 """
-    writefile
+    writefile!
 Write to data in the edfh struct to the file indicated by newpath
 Returns the file handle of the file written, opened for reading
 NOTE: The header needs to be completely specified at function start except for
 the final number of records, which will be updated after all data records
 are written. For a system that is recording the data as it is written, the
 acquire(edfh) function should write the data according the the header parameters.
+NB: iff the function converts from BDF to EDF or EDF to BDF, the edfh struct is changed.
 """
-function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
+function writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
     if sigformat == same || sigformat == bdfplus || sigformat == edfplus
         if sigformat == bdfplus && edfh.edfplus
-            translate16to24bits(edfh)
+            translate16to24bits!(edfh)
             edfh.edfplus = false
             edfh.bdfplus = true
             edfh.edf = false
@@ -271,7 +272,7 @@ function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
                 boff += chan.smp_per_record * 3
             end
         elseif sigformat == edfplus && edfh.bdfplus
-            translate24to16bits(edfh)
+            translate24to16bits!(edfh)
             edfh.edfplus = true
             edfh.bdfplus = false
             edfh.edf = false
@@ -295,8 +296,8 @@ function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
             seek(fh, 236)
             writeleftjust(fh, edfh.datarecords, 8)
         else # otherwise write what is there in memory for writing
-            written += (edfh.edfplus || edfh.edf) ? writeEDFrecords(edfh, fh) :
-                                                    writeBDFrecords(edfh, fh)
+            written += (edfh.edfplus || edfh.edf) ? writeEDFrecords!(edfh, fh) :
+                                                    writeBDFrecords!(edfh, fh)
         end
         # close handle, reopen as a read handle, load/check file, return new handle
         close(fh)
@@ -304,11 +305,11 @@ function writefile(edfh, newpath; acquire=dummyacquire, sigformat=same)
         println("$newpath written successfully, $written bytes.")
         newedfh
     elseif sigformat == edf
-        warn("Writing file to $newpath as an EDF compatible EDF+ file.")
-        writefile(edfh, newpath, acquire=acquire, sigformat=edfplus)
+        warn("Converting file to $newpath as an EDF compatible EDF+ file.")
+        writefile!(edfh, newpath, acquire=acquire, sigformat=edfplus)
     elseif sigformat == bdf
-        warn("Writing file to $newpath as a BDF compatible BDF+ file.")
-        writefile(edfh, newpath, acquire=acquire, sigformat=bdfplus)
+        warn("Converting file to $newpath as a BDF compatible BDF+ file.")
+        writefile!(edfh, newpath, acquire=acquire, sigformat=bdfplus)
     else
         throw("Unknown signal file write format request: $sigformat")
     end
@@ -354,16 +355,16 @@ end
 
 """
     dummyacquire
-Dummy function for call in writefile for optional acquire function
-If using package for data acquistion will need to custom write the acquire function
-for your calls to writefile
+Dummy function for call in writefile! for optional acquire function
+If using package for data acquisition will need to custom write the acquire function
+for your calls to writefile!
 """
 dummyacquire(edfh) = 0
 
 
 """
     channeltimesegment
-get the channels data between the time points
+get the channel's data between the time points
 """
 function channeltimesegment(edfh, channel, startsec, endsec, physical)
     sigdata = signaldata(edfh)
@@ -488,11 +489,11 @@ end
 
 
 """
-    closefile
+    closefile!
 Close the file opened by loadfile and loaded to the BEDFPlus struct
 Releases memory from read data in edfh
 """
-function closefile(edfh)
+function closefile!(edfh)
     edfh.EDFsignals = Array{Int16,2}(0,0)
     edfh.BDFsignals = Array{Int32,2}(0,0)
     close(edfh.ios)
@@ -502,10 +503,10 @@ end
 
 
 """
-    readdata
+    readdata!
 Helper function for loadfile, reads signal data into the BEDFPlus struct
 """
-function readdata(edfh)
+function readdata!(edfh)
     signalpoints = 0
     for chan in 1:edfh.channelcount
         signalpoints += edfh.signalparam[chan].smp_per_record
@@ -597,10 +598,10 @@ epochmarkers(edfh, secs) = map(t->signalat(edfh,t), 0:secs:edfh.file_duration)
 
 
 """
-    checkfile
-Helper function for loadfile and writefile
+    checkfile!
+Helper function for loadfile and writefile!
 """
-function checkfile(edfh)
+function checkfile!(edfh)
     function throwifhasforbiddenchars(bytes)
         if findfirst(c -> (Int(c) < 32) || (Int(c) > 126), bytes) > 0
             throw("Control type forbidden chars in header")
@@ -783,7 +784,7 @@ function checkfile(edfh)
         end
 
     catch y
-        warn("checkfile\n$y\n")
+        warn("checkfile!\n$y\n")
         edfh.filetype = FORMAT_ERROR
         return edfh
     end
@@ -915,10 +916,10 @@ end
 
 
 """
-    readannotations
+    readannotations!
 Helper function for loadfile
 """
-function readannotations(edfh)
+function readannotations!(edfh)
     samplesize = bytesperdatapoint(edfh)
     chan = edfh.annotationchannel
     max_tal_ln = edfh.signalparam[chan].smp_per_record * samplesize
@@ -965,11 +966,11 @@ end
 
 
 """
-    translate24to16bits
+    translate24to16bits!
 Translate data in 24-bit BDF to 16-bit EDF format
-Helper function for writefile
+Helper function for writefile!
 """
-function translate24to16bits(edfh)
+function translate24to16bits!(edfh)
     data = edfh.BDFsignals
     cvrtfactor = min(abs(32767/maximum(data)), abs(-32768/minimum(data)))
     if cvrtfactor < 1.0
@@ -982,6 +983,10 @@ function translate24to16bits(edfh)
         edfh.EDFsignals = map(x->Int16(x), data)
     end
     achan = edfh.annotationchannel
+    if achan == 0
+        warn("No annotation channel in source file")
+        return -1
+    end
     startcol = Int(edfh.signalparam[achan].bufoffset / 3) + 1
     endcol = startcol + edfh.signalparam[achan].smp_per_record - 1
     for rec in 1:edfh.datarecords
@@ -1003,13 +1008,18 @@ function translate24to16bits(edfh)
         end
         edfh.EDFsignals[rec, startcol:endcol] .= reinterpret(Int16, arr)
     end
+    0
 end
 
 
-""" Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile """
-function translate16to24bits(edfh)
+""" Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile! """
+function translate16to24bits!(edfh)
     edfh.BDFsignals = map(x->Int32(x), edfh.EDFsignals)
     chan = edfh.annotationchannel
+    if chan == 0
+        warn("No annotation channel in source file")
+        return -1
+    end
     startcol = Int(edfh.signalparam[chan].bufoffset / 2) + 1
     endcol = startcol + edfh.signalparam[chan].smp_per_record - 1
     for rec in 1:edfh.datarecords
@@ -1023,11 +1033,13 @@ function translate16to24bits(edfh)
         end
         edfh.BDFsignals[rec, startcol:endcol] .= arr
     end
+    0
 end
+
 
 """
     writeEDFsignalchannel
-Helper function for writefile
+Helper function for writefile!
 write a record's worth of a signal channel at given record and channel number
 """
 function writeEDFsignalchannel(edfh, fh, record, channel)
@@ -1039,7 +1051,7 @@ end
 
 """
     writeBDFsignalchannel
-Helper function for writefile
+Helper function for writefile!
 write a BDF record's worth of a signal channel at given record and channel number
 """
 function writeBDFsignalchannel(edfh,fh, record, channel)
@@ -1054,11 +1066,11 @@ end
 
 
 """
-writeEDFrecords
-Helper function for writefile
+writeEDFrecords!
+Helper function for writefile!
 Write a record's worth of all channels of a given record
 """
-function writeEDFrecords(edfh, fh)
+function writeEDFrecords!(edfh, fh)
     if isempty(edfh.EDFsignals)
         # write data as EDF -- if was BDF adjust width if needed for 24 to 16 bits
         if (edfh.bdf || edfh.bdfplus) && !isempty(edfh.BDFsignals)
@@ -1078,11 +1090,11 @@ end
 
 
 """
-    writeBDFrecords
+    writeBDFrecords!
 Write an BEDFPlus format file
-Helper file for writefile
+Helper file for writefile!
 """
-function writeBDFrecords(edfh, fh)
+function writeBDFrecords!(edfh, fh)
     if isempty(edfh.BDFsignals)
         # write data as EDF -- if was BDF adjust width if needed for 24 to 16 bits
         if (edfh.ef || edfh.edfplus) && !isempty(edfh.EDFsignals)
@@ -1103,7 +1115,7 @@ end
 
 """
     writeheader
-Helper function for writefile
+Helper function for writefile!
 """
 function writeheader(edfh::BEDFPlus, fh::IOStream)
     written = 0
@@ -1281,11 +1293,11 @@ end
 
 
 """
-    addannotation
+    addannotation!
 Add an annotation at the given onset timepoint IF there is room
-Note :description is a test string, not an array argument here
+Note the description arg is a text string, not an array argument here
 """
-function addannotation(edfh, onset, duration, description)
+function addannotation!(edfh, onset, duration, description)
     if isempty(edfh.annotations) && edfh.annotationchannel == 0
         throw("No annotation channels in file")
     end
@@ -1396,7 +1408,7 @@ const latin_dict = Dict(
 
 """
     latintoascii
-Helper function for writefile related functions
+Helper function for writefile! related functions
 """
 function latintoascii(str)
     len = length(str)
