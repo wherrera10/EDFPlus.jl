@@ -1,5 +1,5 @@
 #=
-@Version: 0.54
+@Version: 0.55
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -59,7 +59,7 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
 #
 
 
-const VERSION = 0.5
+const EDFPLUS_VERSION = 0.5
 const MAX_CHANNELS =          512
 const MAX_ANNOTATION_LENGTH = 512
 
@@ -92,7 +92,7 @@ writei24(stream::IO, x::Int24) = (bytes = reinterpret(UInt8,[x]); write(stream, 
 
 
 """ static function to state version of module """
-version() = VERSION
+version() = EDFPLUS_VERSION
 
 """
     mutable struct ChannelParam
@@ -101,7 +101,7 @@ Parameters for each channel in the EEG record.
 mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
   label::String                  # label (name) of the signal, eg "C4" if in 10-20 labeling terms
   transducer::String             # signal transducer type
-  physdimension                  # physical dimension (uV, bpm, mA, etc.)
+  physdimension::String          # physical dimension (uV, bpm, mA, etc.)
   physmax::Float64               # physical maximum, usually the maximum input of the ADC
   physmin::Float64               # physical minimum, usually the minimum input of the ADC
   digmax::Int                    # digital maximum, usually the maximum output of the ADC, cannot not be higher than 32767 for EDF or 8388607 for BDF
@@ -142,7 +142,7 @@ const MIN_ANNOTATION_CHANNEL_LENGTH = 120
 Data struct for EDF, EDF+, BDF, and BDF+ EEG type signal files.
 """
 mutable struct BEDFPlus                   # signal file data for EDF, BDF, EDF+, and BDF+ files
-    ios                                   # file handle for the file containing the data
+    ios::IOStream                         # file handle for the file containing the data
     path::String                          # file pathname
     writemode::Bool                       # true if is intended for writing to file
     version::String                       # version of the file format
@@ -185,7 +185,7 @@ mutable struct BEDFPlus                   # signal file data for EDF, BDF, EDF+,
     annotations::Array{Array{Annotation,1},1} # Array of lists of annotations
     EDFsignals::Array{Int16,2}    # 2D array, each row a record, columns are channels including annotations
     BDFsignals::Array{Int32,2}    # Note that either EDFsignals or BDFsignals is used
-    BEDFPlus() = new(nothing,"",false,"",false,false,false,false,false,READ_ERROR,0,0.0,0,0,0,0.0,0,0,0,
+    BEDFPlus() = new(IOStream("nothing"),"",false,"",false,false,false,false,false,READ_ERROR,0,0.0,0,0,0,0.0,0,0,0,
                         "","","","","","","","","","","",0.0,0,"","",0,0,0,
                         Array{Int,1}(),Array{ChannelParam,1}(),
                         Array{Array{Annotation,1},1}(0),Array{Int16,2}(0,0),Array{Int32,2}(0,0))
@@ -385,9 +385,9 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
         row2data = vcat(otherdata[:], row2data)
     end
     if physical
-        return vcat(row1data, row2data) .* multiplier
+        return (vcat(row1data, row2data) .* multiplier)[:]
     else
-        return vcat(row1data, row2data)
+        return vcat(row1data, row2data)[:]
     end
 end
 
@@ -395,11 +395,12 @@ end
 """
     multichanneltimesegment
 Get an multichannel array of lists of datapoints over time segment
+NB: best if all datapoint signal rates are the same
 """
 function multichanneltimesegment(edfh, chanlist, startsec, endsec, physical)
-    mdata = []
+    mdata::Array{Array{Float64,1}} = []
     for chan in chanlist
-        push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical))
+        push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical)[:])
     end
     mdata
 end
@@ -472,8 +473,8 @@ Apply high pass filter to signals, return filtered data
 """
 function highpassfilter(signals, fs, cutoff=70, order=4)
     wdo = 2.0cutoff/fs
-    filt = digitalfilter(Highpass(wdo), Butterworth(order))
-    filtfilt(filt, signals)
+    filth = digitalfilter(Highpass(wdo), Butterworth(order))
+    filtfilt(filth, signals)
 end
 
 
@@ -483,8 +484,8 @@ Apply low pass filter to signals, return filtered data
 """
 function lowpassfilter(signals, fs, cutoff=0.7, order=4)
     wdo = 2.0cutoff/fs
-    filt = digitalfilter(Lowpass(wdo), Butterworth(order))
-    filtfilt(filt, signals)
+    filtl = digitalfilter(Lowpass(wdo), Butterworth(order))
+    filtfilt(filtl, signals)
 end
 
 
@@ -1426,4 +1427,3 @@ end
 
 
 end # module
-
