@@ -22,9 +22,9 @@ annots = annotation_epoch_iterator(edfh, 12)
 
 for (pgnum, page) in enumerate(eegpages)
     if pgnum == 1
-        @test round(page[3][end], 3) == -24.121
+        @test round(page[3][end], 3) == -58.203
     elseif pgnum == 30
-        @test round(page[1][100], 3) == -58.203
+        @test round(page[1][100], 3) == -53.027
     end
 end
 
@@ -34,13 +34,13 @@ for (i, ann) in enumerate(annots)
     end
 end
 
-closefile(edfh)
-@test edfh.filetype == FileStatus(6)
+closefile!(edfh)
+@test edfh.filetype == EDFPlus.CLOSED
 
 
 bdfh = loadfile("samplefrombiosemicom.bdf")
 
-@test "$(bdfh.filetype)" == "BDF" && bdfh.filetype == FileStatus(2)
+@test "$(bdfh.filetype)" == "BDF" && bdfh.filetype == EDFPlus.BDF
 @test trim(bdfh.signalparam[4].label) == "A4"
 @test bdfh.startdate_year == 2001
 @test bdfh.signalparam[end].physdimension == "Boolean"
