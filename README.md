@@ -14,4 +14,13 @@ License: 2-clause BSD.
 
 As of 2018, this is still early alpha software and is NOT FIT FOR ORDINARY CLINICAL USE. YOU HAVE BEEN WARNED.
 
+
+Installation:
+
+EDFPlus.jl is not a currently REGISTERED package.
+
+To install from a Julia REPL command line session, type:
+
+Pkg.clone("git://github.com/wherrera10/EDFPlus.jl.git")
+
 Note that the test files include a 23 mb test file. You may need to allow extra time for that to download when installing.
