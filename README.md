@@ -17,7 +17,7 @@ As of 2018, this is still early alpha software and is NOT FIT FOR ORDINARY CLINI
 
 Installation:
 
-EDFPlus.jl is not a currently REGISTERED package.
+EDFPlus.jl is not a METADATA registered Julia package, so use Pkg.clone(url) istead of Pkg.add(name).
 
 To install from a Julia REPL command line session, type:
 
