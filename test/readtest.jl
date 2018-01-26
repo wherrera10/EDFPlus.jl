@@ -13,7 +13,7 @@ f1 = EDFPlus.recordslice(edfh, 21, 22)[1,:]
 f2 = highpassfilter(reshape(f1, length(f1)), fs)
 f3 = lowpassfilter(f2, fs)
 f4 = notchfilter(f3, fs)
-@test round(f4[end-3],2) == 0.01
+@test round(f4[end-3],2) == 0.0
 @test EDFPlus.recordindexat(edfh, edfh.file_duration - 0.05) == edfh.datarecords
 @test EDFPlus.epochmarkers(edfh, 10.525)[7] == (632, 10)
 
