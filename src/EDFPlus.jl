@@ -1,5 +1,5 @@
 #=
-@Version: 0.55
+@Version: 0.56
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -471,7 +471,7 @@ end
     highpassfilter
 Apply high pass filter to signals, return filtered data
 """
-function highpassfilter(signals, fs, cutoff=70, order=4)
+function highpassfilter(signals, fs, cutoff=32, order=4)
     wdo = 2.0cutoff/fs
     filth = digitalfilter(Highpass(wdo), Butterworth(order))
     filtfilt(filth, signals)
@@ -482,7 +482,7 @@ end
     lowpassfilter
 Apply low pass filter to signals, return filtered data
 """
-function lowpassfilter(signals, fs, cutoff=0.7, order=4)
+function lowpassfilter(signals, fs, cutoff=0.5, order=4)
     wdo = 2.0cutoff/fs
     filtl = digitalfilter(Lowpass(wdo), Butterworth(order))
     filtfilt(filtl, signals)
@@ -563,6 +563,10 @@ function recordindexat(edfh, secondsafterstart)
     if edfh.edfplus || edfh.bdfplus
         # for EDF+ and BDF+ need to check the offset time in the annotation record
         for i in 2:edfh.datarecords
+            if length(edfh.annotations) == 0
+                pos = Int(floor(secondsafterstart/edfh.datarecord_duration))
+                return pos < 2 ? 1 : pos
+            end
             firstannot = edfh.annotations[i][1]
             if secondsafterstart < firstannot.onset
                 return i - 1
