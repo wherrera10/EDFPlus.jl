@@ -368,8 +368,13 @@ get the channel's data between the time points
 """
 function channeltimesegment(edfh, channel, startsec, endsec, physical)
     sigdata = signaldata(edfh)
-    if startsec >= endsec
-        return sigdata[end:1, end:1]  # empty but type correct
+    if startsec >= endsec || startsec > edfh.file_duration
+        warn("bad parameters for channeltimesegment")
+        return sigdata[1,end:1]  # empty but type correct
+    elseif endsec > edfh.file_duration
+        warn("bad end parameter for channeltimesegment")
+        endsec = edfh.file_duration
+        startsec = edfh.file_duration - edfh.datarecord_duration
     end
     row1, col1 = signalat(edfh, startsec, channel)
     row2, col2 = signalat(edfh, endsec, channel)
@@ -385,9 +390,9 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
         row2data = vcat(otherdata[:], row2data)
     end
     if physical
-        return (vcat(row1data, row2data) .* multiplier)[:]
+        return collect(Base.Iterators.flatten((vcat(row1data, row2data) .* multiplier)))
     else
-        return vcat(row1data, row2data)[:]
+        return collect(Base.Iterators.flatten(vcat(row1data, row2data)))
     end
 end
 
@@ -400,7 +405,7 @@ NB: best if all datapoint signal rates are the same
 function multichanneltimesegment(edfh, chanlist, startsec, endsec, physical)
     mdata::Array{Array{Float64,1}} = []
     for chan in chanlist
-        push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical)[:])
+        push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical))
     end
     mdata
 end
@@ -471,7 +476,7 @@ end
     highpassfilter
 Apply high pass filter to signals, return filtered data
 """
-function highpassfilter(signals, fs, cutoff=32, order=4)
+function highpassfilter(signals, fs, cutoff=1.0, order=4)
     wdo = 2.0cutoff/fs
     filth = digitalfilter(Highpass(wdo), Butterworth(order))
     filtfilt(filth, signals)
@@ -482,7 +487,7 @@ end
     lowpassfilter
 Apply low pass filter to signals, return filtered data
 """
-function lowpassfilter(signals, fs, cutoff=0.5, order=4)
+function lowpassfilter(signals, fs, cutoff=25.0, order=4)
     wdo = 2.0cutoff/fs
     filtl = digitalfilter(Lowpass(wdo), Butterworth(order))
     filtfilt(filtl, signals)
@@ -560,13 +565,9 @@ Translates a values in seconds to a position in the signal data matrix,
 returns that record's position
 """
 function recordindexat(edfh, secondsafterstart)
-    if edfh.edfplus || edfh.bdfplus
-        # for EDF+ and BDF+ need to check the offset time in the annotation record
+    if edfh.discontinuous && edfh.edfplus
+        # for EDF+D need to go on annotations about times
         for i in 2:edfh.datarecords
-            if length(edfh.annotations) == 0
-                pos = Int(floor(secondsafterstart/edfh.datarecord_duration))
-                return pos < 2 ? 1 : pos
-            end
             firstannot = edfh.annotations[i][1]
             if secondsafterstart < firstannot.onset
                 return i - 1
@@ -574,8 +575,9 @@ function recordindexat(edfh, secondsafterstart)
         end
         return edfh.datarecords  # last one is at end
     end
-    # for BDF and EDF files, we do not need to check any annotation channel
-    Int(floor(secondsafterstart / edfh.datarecord_duration)) + 1
+    # for continuous files, we do not need to check any annotation channel
+    pos = Int(floor(secondsafterstart/Float64(edfh.datarecord_duration))) + 1
+    pos > edfh.datarecords ? edfh.datarecords : pos
 end
 
 

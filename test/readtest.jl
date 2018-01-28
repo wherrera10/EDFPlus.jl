@@ -13,7 +13,7 @@ f1 = EDFPlus.recordslice(edfh, 21, 22)[1,:]
 f2 = highpassfilter(reshape(f1, length(f1)), fs)
 f3 = lowpassfilter(f2, fs)
 f4 = notchfilter(f3, fs)
-@test round(f4[end-3],2) == 0.0
+@test round(f4[end-3],2) == 6803.28
 @test EDFPlus.recordindexat(edfh, edfh.file_duration - 0.05) == edfh.datarecords
 @test EDFPlus.epochmarkers(edfh, 10.525)[7] == (632, 10)
 
@@ -22,15 +22,15 @@ annots = annotation_epoch_iterator(edfh, 12)
 
 for (pgnum, page) in enumerate(eegpages)
     if pgnum == 1
-        @test round(page[3][end], 3) == -58.203
+        @test round(page[3][end], 3) == -24.121
     elseif pgnum == 30
-        @test round(page[1][100], 3) == -53.027
+        @test round(page[1][100], 3) == -87.012
     end
 end
 
 for (i, ann) in enumerate(annots)
     if i == 9
-        @test ann[1][1].onset == 96.0
+        @test ann[1][1].onset == 95.9
     end
 end
 

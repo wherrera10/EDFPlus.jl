@@ -1,5 +1,5 @@
 #=
-@Version: 0.01
+@Version: 0.012
 @Author: William Herrera
 @Copyright: 2018 William Herrera
 @Created: 12 Jan 2018
@@ -12,7 +12,7 @@ using DSP
 using Plots
 import FileIO
 pyplot()
-# ENV["MPLBACKEND"]="qt4agg" # using PyPlot
+#ENV["MPLBACKEND"]="qt4agg" # using PyPlot
 
 
 function averagereference(edfh, channels=edfh.mapped_signals)
@@ -32,28 +32,23 @@ function averagereference(edfh, channels=edfh.mapped_signals)
 end
 
 
-function eegpages(edfh; channels=collect(1:8), secsperpage=15.0, notch=0.0, high=0.0, low=0.0)
-    epages = Array{Array{Array{Float64,1},1},1}([[[]]])
+function eegpages(edfh; channels=collect(1:4), secsperpage=min(15.0, edfh.file_duration/3.0))
+    epages = Array{Array{Array{Float64,1},1},1}([])
     fs = samplerate(edfh, channels[1])
     starts = linspace(0.0, edfh.file_duration, div(edfh.file_duration,secsperpage))
     for t1 in starts
         t2 = t1 + secsperpage
         epage = multichanneltimesegment(edfh, channels, t1, t2, true)
-        for i in 1:size(epage)[1]
-            if high > 0.0
-                epage[i][:] = highpassfilter(epage[i][:], fs)
-            end
-            if low > 0.0
-                epage[i][:] = lowpassfilter(epage[i][:], fs)
-            end
-            if notch > 0.0
-                epage[i][:] = notchfilter(epage[i][:], fs)
-
-            end
+        if length(epage[1]) < 10
+            break
         end
-        push!(epages, epage)
+        for chan in epage
+            chan .= lowpassfilter(chan, fs, 70)
+            chan .= highpassfilter(chan, fs, 0.5)
+        end
+        push!(epages, epage)        
     end
-    avgref = averagereference(edfh, collect(1:8))
+    avgref = averagereference(edfh, collect(1:4))
     spectpage = spectrogram(avgref)
     spectsegment = contourf(spectpage.time, spectpage.freq, log.(spectpage.power),
                         xaxis=false, yaxis=false, colorbar=false)
