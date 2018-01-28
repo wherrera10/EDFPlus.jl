@@ -1,5 +1,5 @@
 #=
-@Version: 0.012
+@Version: 0.01
 @Author: William Herrera
 @Copyright: 2018 William Herrera
 @Created: 12 Jan 2018
@@ -12,7 +12,8 @@ using DSP
 using Plots
 import FileIO
 pyplot()
-#ENV["MPLBACKEND"]="qt4agg" # using PyPlot
+using PyPlot
+# ENV["MPLBACKEND"]="qt4agg"
 
 
 function averagereference(edfh, channels=edfh.mapped_signals)
@@ -32,28 +33,25 @@ function averagereference(edfh, channels=edfh.mapped_signals)
 end
 
 
-function eegpages(edfh; channels=collect(1:4), secsperpage=min(15.0, edfh.file_duration/3.0))
+function eegpages(edfh; channels=collect(3:8), secsperpage=15.0)
     epages = Array{Array{Array{Float64,1},1},1}([])
     fs = samplerate(edfh, channels[1])
     starts = linspace(0.0, edfh.file_duration, div(edfh.file_duration,secsperpage))
-    for t1 in starts
+    for t1 in starts[1:end-1]
         t2 = t1 + secsperpage
         epage = multichanneltimesegment(edfh, channels, t1, t2, true)
-        if length(epage[1]) < 10
-            break
+        for i in 1:size(epage)[1]
+            epage[i] = highpassfilter(epage[i], fs, 1.5)
+            epage[i] = lowpassfilter(epage[i], fs, 24.0)
         end
-        for chan in epage
-            chan .= lowpassfilter(chan, fs, 70)
-            chan .= highpassfilter(chan, fs, 0.5)
-        end
-        push!(epages, epage)        
+        push!(epages, epage)
     end
-    avgref = averagereference(edfh, collect(1:4))
+    avgref = averagereference(edfh, collect(1:8))
     spectpage = spectrogram(avgref)
-    spectsegment = contourf(spectpage.time, spectpage.freq, log.(spectpage.power),
+    spectsegment = Plots.contourf(spectpage.time, spectpage.freq, log.(spectpage.power),
                         xaxis=false, yaxis=false, colorbar=false)
     imgname = "tmp.png"
-    savefig(spectsegment, imgname)
+    Plots.savefig(spectsegment, imgname)
     timepoints = linspace(0.0, secsperpage, length(epages[1][1]))
     channelnames = [trim(edfh.signalparam[chan].label) for chan in channels]
     epages, timepoints, channelnames, imgname, edfh.path
@@ -62,15 +60,15 @@ end
 
 function plotpage(timepoints, page, ylabels, imgname, title)
     nchannels = size(page)[1]
-    plt = plot(timepoints, page, layout=(nchannels+1,1),
+    plt = Plots.plot(timepoints, page, layout=(nchannels+1,1),
                            xticks=collect(timepoints[1]:1:timepoints[end]),
                            yticks=false, legend=false)
     for i in 1:nchannels
         plt[i][:xaxis][:showaxis] = false
-        plot!(yaxis=true, tight_layout=true, ylabel = ylabels[i], subplot=i)
+        Plots.plot!(yaxis=true, tight_layout=true, ylabel = ylabels[i], subplot=i)
     end
     plt[nchannels][:xaxis][:showaxis] = true
-    plot!(title = title, subplot=1, size=dims)
+    Plots.plot!(title = title, subplot=1, size=dims)
     img = FileIO.load(imgname)
     plot!(img, aspect_ratio="auto",subplot=nchannels+1, yaxis=false, xaxis=false)
     plt
