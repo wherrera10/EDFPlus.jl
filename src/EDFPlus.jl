@@ -829,7 +829,7 @@ function checkfile!(edfh)
             elseif subfield[2] == "F"
                 edfh.gender = "Female"
             else
-                edfhdf.gender = ""
+                edfh.gender = ""
             end
             if subfield[3] == "X"
                 edfh.birthdate = ""
@@ -1149,7 +1149,7 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     end
     pidbytes = edfh.patientcode == "" ? "X " : replace(edfh.patientcode, " ", "_") * " "
     if edfh.gender == ""
-        pidbyes = ""
+        pidbytes *= "X "
     elseif edfh.gender[1] == 'M'
         pidbytes *= "M "
     elseif edfh.gender[1] == 'F'
