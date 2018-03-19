@@ -868,14 +868,11 @@ function checkfile!(edfh)
             subfield = split(trim(edfh.recording))
             if length(subfield) < 5
                 throw("Not enough fields in plus recording data")
-            elseif subfield[1] != "Startdate" || (subfield[2] != "X" &&
-                 (!((dor = Date(subfield[2], "dd-uuu-yyyy")) isa Date)) ||
-                  !contains("JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC", subfield[2][4:6]))
-                throw("Bad recording field start")
             elseif subfield[2] == "X"
                 edfh.startdatestring = ""
             else
                 edfh.startdatestring = subfield[2]
+                dor = Date(subfield[2], "dd-uuu-yyyy")
                 if Dates.year(dor) < 1970
                     throw("bad startdate year in recording data: got $(Dates.year(dor)) from $dor")
                 else
@@ -1086,7 +1083,7 @@ function writeEDFrecords!(edfh, fh)
     if isempty(edfh.EDFsignals)
         # write data as EDF -- if was BDF adjust width if needed for 24 to 16 bits
         if (edfh.bdf || edfh.bdfplus) && !isempty(edfh.BDFsignals)
-            translate24to16(edfh)
+            translate24to16bits!(edfh)
         else
             return 0
         end
@@ -1110,7 +1107,7 @@ function writeBDFrecords!(edfh, fh)
     if isempty(edfh.BDFsignals)
         # write data as BDF -- if was EDF adjust width if needed for 16 to 24 bits
         if (edfh.ef || edfh.edfplus) && !isempty(edfh.EDFsignals)
-            translate16to24(edfh)
+            translate16to24bits!(edfh)
         else
             return 0
         end
