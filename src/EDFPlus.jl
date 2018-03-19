@@ -1,5 +1,5 @@
 #=
-@Version: 0.56
+@Version: 0.57
 @Author: William Herrera, partially as a port of EDFlib C code by Teunis van Beelen
 @Copyright: (Julia code) 2015, 2016, 2017, 2018 William Herrera
 @Created: Dec 6 2015
@@ -94,6 +94,7 @@ writei24(stream::IO, x::Int24) = (bytes = reinterpret(UInt8,[x]); write(stream, 
 """ static function to state version of module """
 version() = EDFPLUS_VERSION
 
+
 """
     mutable struct ChannelParam
 Parameters for each channel in the EEG record.
@@ -129,7 +130,7 @@ mutable struct Annotation
     duration::String
     annotation::Array{String,1}
     Annotation() = new(0.0,"",[])
-    Annotation(o,d,arr) = new(o,d,typeof(arr) == String?[arr]:arr)
+    Annotation(o,d,arr) = new(o, d, typeof(arr) == String ? [arr] : arr)
 end
 # max size of annotationtext
 const MAX_ANNOTATION_TEXT_LENGTH = 40
@@ -196,7 +197,7 @@ end
     loadfile
 Load a BDF+ or EDF+ type file.
 Takes a pathname. Will ignore annotations if second argument is set false.
-Returns an BEDFPlus structure including header and data.
+Returns a BEDFPlus structure including header and data.
 """
 function loadfile(path::String, read_annotations=true)
     edfh = BEDFPlus()
@@ -360,6 +361,10 @@ If using package for data acquisition will need to custom write the acquire func
 for your calls to writefile!
 """
 dummyacquire(edfh) = 0
+
+
+""" for julia version 0.7+ compatibility with findfirst() usage in this v0.6 module """
+nothing2zero(x) = (typeof(x) == Void && x == nothing) ? 0 : x
 
 
 """
@@ -610,7 +615,7 @@ Helper function for loadfile and writefile!
 """
 function checkfile!(edfh)
     function throwifhasforbiddenchars(bytes)
-        if findfirst(c -> (Int(c) < 32) || (Int(c) > 126), bytes) > 0
+        if nothing2zero(findfirst(c -> (Int(c) < 32) || (Int(c) > 126), bytes)) > 0
             throw("Control type forbidden chars in header")
         end
     end
@@ -740,7 +745,7 @@ function checkfile!(edfh)
             transducertype = convert(String, hdrbuf[pos:pos+79])
             throwifhasforbiddenchars(transducertype)
             pblock.transducer = transducertype                    # transducer type eg "active electrode"
-            if pblock.annotation && findfirst(c->!isspace(c), transducertype) > 0
+            if pblock.annotation && nothing2zero(findfirst(c->!isspace(c), transducertype)) > 0
                 throw("Transducer field should be blank in annotation channels")
             end
             pos = 257 + edfh.channelcount * 96 + (i-1) * 8
@@ -768,7 +773,7 @@ function checkfile!(edfh)
             pfchars = convert(String, hdrbuf[pos:pos+79])
             throwifhasforbiddenchars(pfchars)
             pblock.prefilter = pfchars                            # prefilter field eg "HP:DC"
-            if pblock.annotation && findfirst(c->!isspace(c), pfchars) > 0
+            if pblock.annotation && nothing2zero(findfirst(c->!isspace(c), pfchars)) > 0
                 throw("Prefilter field should be blank in annotation channels")
             end
             pos = 257 + edfh.channelcount * 216 + (i-1) * 8
@@ -941,11 +946,11 @@ function readannotations!(edfh)
             endpos = startpos + edfh.signalparam[chan].smp_per_record * samplesize -1
             annotbuf = convert(String, cnvbuf[startpos:endpos])
             for (j, tal) in enumerate(split(annotbuf, '\x00'))
-                if tal == "" || findfirst(tal, '\x14') < 1
+                if tal == "" || nothing2zero(findfirst(tal, '\x14')) < 1
                     break # padding zeroes at end or bad txt
                 end
                 (times, annottxt) = split(tal, '\x14', limit=2)
-                if findfirst(times, '\x15') > 0
+                if nothing2zero(findfirst(times, '\x15')) > 0
                     (ons, duration) = split(times, '\x15')
                     onset = parse(Float64, ons)
                 else
@@ -1103,7 +1108,7 @@ Helper file for writefile!
 """
 function writeBDFrecords!(edfh, fh)
     if isempty(edfh.BDFsignals)
-        # write data as EDF -- if was BDF adjust width if needed for 24 to 16 bits
+        # write data as BDF -- if was EDF adjust width if needed for 16 to 24 bits
         if (edfh.ef || edfh.edfplus) && !isempty(edfh.EDFsignals)
             translate16to24(edfh)
         else
@@ -1337,7 +1342,7 @@ function addannotation!(edfh, onset, duration, description)
         for recordnum in neartimeindex:edfh.datarecords-1
             ints = (signaldata(edfh)[recordnum, startpos:endpos])[:]
             ctxt = reinterpret(UInt8, ints)
-            addindex = findlast(ctxt) + 1
+            addindex = nothing2zero(findlast(ctxt)) + 1
             if addindex > 0 && addindex + additionalbytes < length(ctxt)
                 ctxt[addindex+1:addindex+additionalbytes] .= Array{UInt8,1}(toadd)
                 if iwidth == 2
@@ -1390,7 +1395,7 @@ function writeleftjust(fh, x, len, fillchar=' ')
 end
 
 
-""" map table for traslation of latin extended ascii to plain ascii chars """
+""" map table for translation of latin extended ascii to plain ascii chars """
 const latin_dict = Dict(
 '¡'=> '!', '¢'=> 'c', '£'=> 'L', '¤'=> 'o', '¥'=> 'Y',
 '¦'=> '|', '§'=> 'S', '¨'=> '`', '©'=> 'c', 'ª'=> 'a',
