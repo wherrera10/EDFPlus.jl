@@ -1287,7 +1287,7 @@ end
 Create a TAL (timestamped annotation list) text entry out of an annotation
 """
 function annotationtoTAL(ann)
-    txt = trimrightzeros(@sprintf("%-+f", ann.onset))
+    txt = trimrightzeros((ann.onset >= 0 ? "+" : "") * "$(ann.onset)")
     if ann.duration != ""
         txt *= "\x15" * ann.duration
     end
