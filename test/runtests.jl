@@ -1,8 +1,8 @@
 using EDFPlus
-using Base.Test
+using Test
 # Run tests
 
-tic()
-@time @test include("readtest.jl")
-@time @test include("writetest.jl")
-toc()
+@elapsed begin
+    @time @test include("readtest.jl")
+    @time @test include("writetest.jl")
+end
