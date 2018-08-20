@@ -1,5 +1,5 @@
 using EDFPlus
-using Base.Test
+using Test
 
 
 edfh = loadfile("EDFPlusTestFile.edf")
