@@ -12,15 +12,14 @@ Heavily influenced by Teunis van Beelen's C library, edflib.
 
 License: 2-clause BSD.
 
-As of 2018, this is still early alpha software and is NOT FIT FOR ORDINARY CLINICAL USE. YOU HAVE BEEN WARNED.
-
+Current versions work on Julia >= v"0.7.0".
 
 Installation:
 
-EDFPlus.jl is not a METADATA registered Julia package, so use Pkg.clone(url) istead of Pkg.add(name).
+EDFPlus.jl is not a METADATA registered Julia package, so use Pkg.clone(url) instead of Pkg.add(name).
 
 To install from a Julia REPL command line session, type:
 
-Pkg.clone("git://github.com/wherrera10/EDFPlus.jl.git")
+Pkg.clone("http://github.com/wherrera10/EDFPlus.jl")
 
 Note that the test files include a 23 mb test file. You may need to allow extra time for that to download when installing.
