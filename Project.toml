@@ -1,0 +1,7 @@
+name = "EDFPlus.jl"
+uuid = "ed8119d8-17c0-577a-aedb-09afd2b98d9a"
+version = "0.5.7"
+
+[deps]
+DSP
+IterTools
