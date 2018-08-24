@@ -15,10 +15,10 @@ notifications:
 script:
 #  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
   - julia -e 'Pkg.clone(pwd())'
-  - julia -e 'Pkg.test("EDFPlus",coverage=true)'
+  - julia -e 'Pkg.test("EDFPlus.jl",coverage=true)'
 after_success:
   - julia -e julia -e 'Pkg.add("Documenter")'
-  - julia -e 'cd(Pkg.dir("EDFPlus")); include(joinpath("docs", "make.jl"))'
-  - julia -e 'cd(Pkg.dir("EDFPlus")); Pkg.add("Coverage"); using Coverage; Codecov.submit(Codecov.process_folder())'
-  - julia -e 'cd(Pkg.dir("EDFPlus")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(process_folder())'
+  - julia -e 'cd(Pkg.dir("EDFPlus.jl")); include(joinpath("docs", "make.jl"))'
+  - julia -e 'cd(Pkg.dir("EDFPlus.jl")); Pkg.add("Coverage"); using Coverage; Codecov.submit(Codecov.process_folder())'
+  - julia -e 'cd(Pkg.dir("EDFPlus.jl")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(process_folder())'
 
