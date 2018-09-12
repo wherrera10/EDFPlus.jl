@@ -1,5 +1,7 @@
 #=
-Version = "0.58"
+[EDFPlus.jl]
+Julia = 0.7
+Version = 0.59
 Author = "William Herrera, partially as a port of EDFlib C code by Teunis van Beelen"
 Copyright = "Copyright for Julia code 2015, 2016, 2017, 2018 William Herrera"
 Created = "Dec 6 2015"
@@ -7,10 +9,11 @@ Purpose = "EEG file routines for EDF, BDF, EDF+, and BDF+ files"
 =#
 
 module EDFPlus
-using Core.Intrinsics
 using DSP
-using IterTools
 using Dates
+using IterTools
+using Core.Intrinsics
+
 
 if VERSION < v"0.7.0"
     @warn("This version of EDFPlus requires Julia 0.7 or above.")
@@ -83,6 +86,12 @@ enum for type or state of file: type of data detected, whether any errors
 
 """
     type Int24
+
+primitive type Int24 24 end
+Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
+Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
+function writei24(stream::IO, x)
+
 24-bit integer routines for BDF format signal data
 BDF and BDF+ files use 24 bits per data signal point.
 Cache these after reading as Int32 to fit typical LLVM CPU registers
@@ -201,7 +210,8 @@ end
 
 
 """
-    loadfile
+    loadfile(path::String, read_annotations=true)
+
 Load a BDF+ or EDF+ type file.
 Takes a pathname. Will ignore annotations if second argument is set false.
 Returns a BEDFPlus structure including header and data.
@@ -254,9 +264,11 @@ end
 
 
 """
-    writefile!
+    writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
+
 Write to data in the edfh struct to the file indicated by newpath
 Returns the file handle of the file written, opened for reading
+
 NOTE: The header needs to be completely specified at function start except for
 the final number of records, which will be updated after all data records
 are written. For a system that is recording the data as it is written, the
@@ -325,11 +337,13 @@ end
 
 
 """
-    epoch_iterator
+    epoch_iterator(edfh, epochsecs; channels, startsec, endsec, physical)
+
 Make an iterator for EEG epochs of a given duration between start and stop times.
 Required arguments:
 edfh BEDFPlus struct
 epochsecs second duration of each epoch
+
 Optional arguments:
 channels List of channel numbers for data, defaults to all signal channels
 startsec Starting position from 0 at start of file, defaults to file start
@@ -345,7 +359,8 @@ end
 
 
 """
-    annotation_epoch_iterator
+    annotation_epoch_iterator(edfh, epochsecs; startsec, endsec)
+
 Return an iterator for a group of annotations for a given epoch as in epoch_iterator
 """
 function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file_duration)
@@ -362,7 +377,8 @@ end
 
 
 """
-    dummyacquire
+    dummyacquire(edfh)
+
 Dummy function for call in writefile! for optional acquire function
 If using package for data acquisition will need to custom write the acquire function
 for your calls to writefile!
@@ -371,7 +387,8 @@ dummyacquire(edfh) = 0
 
 
 """
-    channeltimesegment
+    channeltimesegment(edfh, channel, startsec, endsec, physical)
+
 get the channel's data between the time points
 """
 function channeltimesegment(edfh, channel, startsec, endsec, physical)
@@ -406,7 +423,8 @@ end
 
 
 """
-    multichanneltimesegment
+    multichanneltimesegment(edfh, chanlist, startsec, endsec, physical)
+
 Get an multichannel array of lists of datapoints over time segment
 NB: best if all datapoint signal rates are the same
 """
@@ -420,7 +438,8 @@ end
 
 
 """
-    signalindices
+    signalindices(edfh, channelnumber)
+
 Get a pair of indices of a channel's bytes within each of the data records
 """
 function signalindices(edfh, channelnumber)
@@ -431,7 +450,8 @@ end
 
 
 """
-    digitalchanneldata
+    digitalchanneldata(edfh, channelnumber)
+
 Get a single digital channel of data in entirety.
 Arguments:
 edfh          the BEDFPlus struct
@@ -445,7 +465,8 @@ end
 
 
 """
-    physicalchanneldata
+    physicalchanneldata(edfh, channelnumber)
+
 Get a single data channel in its entirely, in the physical units stated in the header
 Arguments:
 edfh          the BEDFPlus struct
@@ -464,14 +485,16 @@ end
 
 
 """
-    samplerate
+    samplerate(edfh, channel)
+
 Get sample (sampling) rate (fs) on the channel in sec^-1 units
 """
 samplerate(edfh, channel) = edfh.signalparam[channel].smp_per_record / edfh.datarecord_duration
 
 
 """
-    notchfilter
+    notchfilter(signals, fs, notchfreq=60, q = 35)
+
 Notch filter signals in array signals, return filtered signals
 """
 function notchfilter(signals, fs, notchfreq=60, q = 35)
@@ -481,7 +504,8 @@ end
 
 
 """
-    highpassfilter
+    highpassfilter(signals, fs, cutoff=1.0, order=4)
+
 Apply high pass filter to signals, return filtered data
 """
 function highpassfilter(signals, fs, cutoff=1.0, order=4)
@@ -492,7 +516,8 @@ end
 
 
 """
-    lowpassfilter
+    lowpassfilter(signals, fs, cutoff=25.0, order=4)
+
 Apply low pass filter to signals, return filtered data
 """
 function lowpassfilter(signals, fs, cutoff=25.0, order=4)
@@ -503,7 +528,8 @@ end
 
 
 """
-    closefile!
+    closefile!(edfh)
+
 Close the file opened by loadfile and loaded to the BEDFPlus struct
 Releases memory from read data in edfh
 """
@@ -517,7 +543,8 @@ end
 
 
 """
-    readdata!
+    readdata!(edfh)
+
 Helper function for loadfile, reads signal data into the BEDFPlus struct
 """
 function readdata!(edfh)
@@ -551,23 +578,40 @@ function readdata!(edfh)
 end
 
 
-""" Return which BEDFPlus variable holds the signal data """
+"""
+    signaldata(edfh)
+
+Return which BEDFPlus variable holds the signal data
+"""
 signaldata(edfh) = (edfh.bdf || edfh.bdfplus) ? edfh.BDFsignals : edfh.EDFsignals
 
-""" Get a slice of the data in the recording from one data entry position to another """
+"""
+    recordslice(edfh, startpos, endpos)
+
+Get a slice of the data in the recording from one data entry position to another
+"""
 recordslice(edfh, startpos, endpos) = signaldata(edfh)[startpos:endpos, :]
 
-""" Return how many bytes used per data point entry: 2 for EDF (16-bit), 3 for BDF (24-bit) data. """
+"""
+    bytesperdatapoint(edfh)
+
+Return how many bytes used per data point entry: 2 for EDF (16-bit), 3 for BDF (24-bit) data.
+"""
 bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
 
-""" Time interval in fractions of a second between individual signal data points """
+"""
+    datapointinterval(edfh, channel)
+
+Time interval in fractions of a second between individual signal data points
+"""
 function datapointinterval(edfh, channel=edfh.mapped_signals[1])
     edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
 end
 
 
 """
-    recordindexat
+    recordindexat(edfh, secondsafterstart)
+
 Index of the record point at or closest just before a given time from recording start
 Translates a values in seconds to a position in the signal data matrix,
 returns that record's position
@@ -590,7 +634,8 @@ end
 
 
 """
-    signalat
+    signalat(edfh, secondsafter, channel)
+
 Get the position in the signal data of the data point at or closest after a
 given time from recording start. Translates a value in seconds to a position
 in the signal channel matrix, returns that signal data point's 2D position as list
@@ -605,7 +650,8 @@ function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
 end
 
 """
-    epochmarkers
+    epochmarkers(edfh, secs)
+
 Get a set of (start, stop) positional markers for epochs (sequential windows)
 given an epoch duration in seconds
 """
@@ -617,7 +663,8 @@ dash2space(x) = replace(x, "_" => " ")
 
 
 """
-    checkfile!
+    checkfile!(edfh)
+
 Helper function for loadfile and writefile!
 """
 function checkfile!(edfh)
@@ -933,7 +980,8 @@ end
 
 
 """
-    readannotations!
+    readannotations!(edfh)
+
 Helper function for loadfile
 """
 function readannotations!(edfh)
@@ -983,7 +1031,8 @@ end
 
 
 """
-    translate24to16bits!
+    translate24to16bits!(edfh)
+
 Translate data in 24-bit BDF to 16-bit EDF format
 Helper function for writefile!
 """
@@ -1030,7 +1079,11 @@ function translate24to16bits!(edfh)
 end
 
 
-""" Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile! """
+"""
+    translate16to24bits!(edfh)
+
+Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile!
+"""
 function translate16to24bits!(edfh)
     edfh.BDFsignals = map(x->Int32(x), edfh.EDFsignals)
     chan = edfh.annotationchannel
@@ -1056,7 +1109,8 @@ end
 
 
 """
-    writeEDFsignalchannel
+    writeEDFsignalchannel(edfh, fh, record, channel)
+
 Helper function for writefile!
 write a record's worth of a signal channel at given record and channel number
 """
@@ -1068,7 +1122,8 @@ end
 
 
 """
-    writeBDFsignalchannel
+    writeBDFsignalchannel(edfh,fh, record, channel)
+
 Helper function for writefile!
 write a BDF record's worth of a signal channel at given record and channel number
 """
@@ -1084,7 +1139,8 @@ end
 
 
 """
-writeEDFrecords!
+    writeEDFrecords!(edfh, fh)
+
 Helper function for writefile!
 Write a record's worth of all channels of a given record
 """
@@ -1108,7 +1164,8 @@ end
 
 
 """
-    writeBDFrecords!
+    writeBDFrecords!(edfh, fh)
+
 Write an BEDFPlus format file
 Helper file for writefile!
 """
@@ -1132,7 +1189,8 @@ end
 
 
 """
-    writeheader
+    writeheader(edfh, fh)
+
 Helper function for writefile!
 """
 function writeheader(edfh::BEDFPlus, fh::IOStream)
@@ -1292,7 +1350,8 @@ end
 
 
 """
-   annotationtoTAL
+   annotationtoTAL(ann)
+
 Create a TAL (timestamped annotation list) text entry out of an annotation
 """
 function annotationtoTAL(ann)
@@ -1311,7 +1370,8 @@ end
 
 
 """
-    addannotation!
+    addannotation!(edfh, onset, duration, description)
+
 Add an annotation at the given onset timepoint IF there is room
 Note the description arg is a text string, not an array argument here
 """
@@ -1368,7 +1428,11 @@ function addannotation!(edfh, onset, duration, description)
 end
 
 
-""" trim whitespace fore and aft, as in trim in java etc"""
+"""
+    trim(str)
+
+trim whitespace fore and aft, as in trim in java etc
+"""
 trim(str) = replace(replace(String(str), r"^\s*(\S.*)$" => s"\1"), r"(^.*\S)\s*$" => s"\1")
 
 
@@ -1377,7 +1441,8 @@ trimrightzeros(fstr) = reverse(replace(replace(reverse(fstr), r"^0+([^0].+)$" =>
 
 
 """
-    writeleftjust
+    writeleftjust(fh, x, len, fillchar=' ')
+
 Write a stringified object to a file in the leftmost portion of chars written,
 filling with fillchar to len length as needed, truncate if too long for field
 """
@@ -1426,7 +1491,8 @@ const latin_dict = Dict(
 
 
 """
-    latintoascii
+    latintoascii(str)
+
 Helper function for writefile! related functions
 """
 function latintoascii(str)
