@@ -1,7 +1,7 @@
 #=
 [EDFPlus.jl]
 Julia = 0.7
-Version = 0.59
+Version = 0.60
 Author = "William Herrera, partially as a port of EDFlib C code by Teunis van Beelen"
 Copyright = "Copyright for Julia code 2015, 2016, 2017, 2018 William Herrera"
 Created = "Dec 6 2015"
@@ -87,14 +87,9 @@ enum for type or state of file: type of data detected, whether any errors
 """
     type Int24
 
-primitive type Int24 24 end
-Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
-Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
-function writei24(stream::IO, x)
-
-24-bit integer routines for BDF format signal data
+# 24-bit integer routines for BDF format signal data.
 BDF and BDF+ files use 24 bits per data signal point.
-Cache these after reading as Int32 to fit typical LLVM CPU registers
+The module caches these after reading as Int32 to fit LLVM CPU registers.
 """
 primitive type Int24 24 end
 Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
@@ -136,6 +131,7 @@ end
 
 """
     mutable struct Annotation
+
 These are text strings denoting a time, optionally duration, and a list of notes
 about the signal at that particular time in the recording. The first onset time
 of the annotation channel gives a fractional second offset adjustment of the
@@ -340,15 +336,15 @@ end
     epoch_iterator(edfh, epochsecs; channels, startsec, endsec, physical)
 
 Make an iterator for EEG epochs of a given duration between start and stop times.
-Required arguments:
-edfh BEDFPlus struct
-epochsecs second duration of each epoch
+# Required arguments
+- edfh BEDFPlus struct
+- epochsecs second duration of each epoch
 
-Optional arguments:
-channels List of channel numbers for data, defaults to all signal channels
-startsec Starting position from 0 at start of file, defaults to file start
-endsec Ending position in seconds from start of _file_, defaults to file end
-physical Whether to return data as translated to the physical units, defaults to true
+# Optional arguments
+- channels List of channel numbers for data, defaults to all signal channels
+- startsec Starting position from 0 at start of file, defaults to file start
+- endsec Ending position in seconds from start of _file_, defaults to file end
+- physical Whether to return data as translated to the physical units, defaults to true
 """
 function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                               startsec=0, endsec=edfh.file_duration, physical=true)
@@ -452,10 +448,10 @@ end
 """
     digitalchanneldata(edfh, channelnumber)
 
-Get a single digital channel of data in entirety.
-Arguments:
-edfh          the BEDFPlus struct
-channelnumber the channel number in the records
+Get a single digital channel of data in its entirety.
+# Arguments:
+- edfh          the BEDFPlus struct
+- channelnumber the channel number in the records
 """
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
@@ -468,9 +464,9 @@ end
     physicalchanneldata(edfh, channelnumber)
 
 Get a single data channel in its entirely, in the physical units stated in the header
-Arguments:
-edfh          the BEDFPlus struct
-channelnumber the channel number in the records-- a channel in the mapped_signals list
+# Arguments
+- edfh          the BEDFPlus struct
+- channelnumber the channel number in the records-- a channel in the mapped_signals list
 """
 function physicalchanneldata(edfh, channel)
     if !(channel in edfh.mapped_signals)
