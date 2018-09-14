@@ -1,9 +1,9 @@
 #=
-@Version: 0.01
-@Author: William Herrera
-@Copyright: 2018 William Herrera
-@Created: 12 Jan 2018
-@Purpose: EEG file routines viewer example
+Version =  0.01
+Author = "William Herrera"
+Copyright = "Copyright 2018 William Herrera"
+Created = "12 Jan 2018"
+Purpose = "EEG file routines viewer example"
 =#
 
 
@@ -13,7 +13,6 @@ using Plots
 import FileIO
 pyplot()
 using PyPlot
-# ENV["MPLBACKEND"]="qt4agg"
 
 
 function averagereference(edfh, channels=edfh.mapped_signals)
