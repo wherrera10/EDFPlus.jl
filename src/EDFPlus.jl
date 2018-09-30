@@ -1,7 +1,7 @@
 #=
 [EDFPlus.jl]
 Julia = 0.7
-Version = 0.60
+Version = 0.61
 Author = "William Herrera, partially as a port of EDFlib C code by Teunis van Beelen"
 Copyright = "Copyright for Julia code 2015, 2016, 2017, 2018 William Herrera"
 Created = "Dec 6 2015"
@@ -1444,22 +1444,12 @@ filling with fillchar to len length as needed, truncate if too long for field
 """
 function writeleftjust(fh, x, len, fillchar=' ')
     str = "$x"
-    written = 0
-    strlen = length(str)
-    if strlen > len
+    if length(str) > len
         str = str[1:len]
-    end
-    if strlen > 0
-        bytelen = write(fh, str)
-        written += bytelen
     else
-        bytelen = 0
+        str = rpad(str, len, fillchar)
     end
-    while bytelen < len
-        written += write(fh, fillchar)
-        bytelen += 1
-    end
-    written
+    return write(fh, str)
 end
 
 
