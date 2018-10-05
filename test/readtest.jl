@@ -46,7 +46,7 @@ bdfh = loadfile("samplefrombiosemicom.bdf")
 @test bdfh.signalparam[end].physdimension == "Boolean"
 @test EDFPlus.recordslice(bdfh, 4, 14)[1,end-3] == 1835263
 
-@test EDFPlus.version() == 0.58
+@test EDFPlus.version() == 0.59
 sig = physicalchanneldata(bdfh, 1)
 @test round(sig[100], digits=3) == 523818.031
 @test EDFPlus.recordindexat(bdfh, bdfh.file_duration - 0.3) == bdfh.datarecords
