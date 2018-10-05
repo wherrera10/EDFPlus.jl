@@ -65,7 +65,7 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
 #
 
 
-const EDFPLUS_VERSION = 0.58
+const EDFPLUS_VERSION = 0.59
 const MAX_CHANNELS =          512
 const MAX_ANNOTATION_LENGTH = 512
 
@@ -1426,10 +1426,11 @@ end
 
 """
     trim(str)
-
 trim whitespace fore and aft, as in trim in java etc
 """
-trim(str) = replace(replace(String(str), r"^\s*(\S.*)$" => s"\1"), r"(^.*\S)\s*$" => s"\1")
+trim(str::String) = strip(str)
+trim(ch::Char) = strip(string(ch))
+trim(bytes) = strip(String(bytes))
 
 
 """ trimrightzeros compact number string by trimming nonsignificant decimal places/point when not zero"""
