@@ -18,7 +18,7 @@ Installation:
 
 EDFPlus.jl is not a METADATA registered Julia package, so use Pkg.clone(url) instead of Pkg.add(name).
 
-To install from a Julia REPL command line session, type:
+To install from a Julia REPL command line session, with using Pkg, type:
 
     Pkg.clone("http://github.com/wherrera10/EDFPlus.jl")
 
