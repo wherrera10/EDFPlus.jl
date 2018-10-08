@@ -1,5 +1,6 @@
 #=
-Version =  0.01
+[eegplotter.jl]
+Version =  0.02
 Author = "William Herrera"
 Copyright = "Copyright 2018 William Herrera"
 Created = "12 Jan 2018"
@@ -14,6 +15,8 @@ import FileIO
 pyplot()
 using PyPlot
 
+
+linspace(start, stop, len) = LinRange{Float64}(start, stop, len)
 
 function averagereference(edfh, channels=edfh.mapped_signals)
     data = EDFPlus.signaldata(edfh)
@@ -64,12 +67,12 @@ function plotpage(timepoints, page, ylabels, imgname, title)
                            yticks=false, legend=false)
     for i in 1:nchannels
         plt[i][:xaxis][:showaxis] = false
-        Plots.plot!(yaxis=true, tight_layout=true, ylabel = ylabels[i], subplot=i)
+        Plots.plot!(yaxis=true, subplot=i, tight_layout=true, ylabel = ylabels[i])
     end
     plt[nchannels][:xaxis][:showaxis] = true
-    Plots.plot!(title = title, subplot=1, size=dims)
+    Plots.plot!(title = title, subplot=1, size=dims, xaxis=false)
     img = FileIO.load(imgname)
-    plot!(img, aspect_ratio="auto",subplot=nchannels+1, yaxis=false, xaxis=false)
+    plot!(img, aspect_ratio="auto",subplot=nchannels+1)
     plt
 end
 
@@ -121,7 +124,7 @@ function vieweeg(filename)
     epages, timepoints, channelnames, imgname, title = eegpages(edfh)
     maxpage = length(epages)
     plt = plotpage(timepoints, epages[1], channelnames, imgname, title)
-    PyPlot.display(plt)
+    display(plt)
     fig = PyPlot.gcf()
     fig[:canvas][:mpl_connect]("button_press_event", onclick)
     fig[:canvas][:mpl_connect]("key_press_event", onkeypress)
@@ -131,9 +134,9 @@ function vieweeg(filename)
         if needupdate
             needupdate = false
             newpage = epages[currentpage]
-            newtitle = replace(title, r".+\/([^\/]+)$", s"\1")
+            newtitle = replace(title, r".+\/([^\/]+)$" => s"\1")
             newtitle *= " (Page $currentpage of $maxpage)"
-            PyPlot.display(plotpage(timepoints, newpage, channelnames, imgname, newtitle))
+            display(plotpage(timepoints, newpage, channelnames, imgname, newtitle))
             println("updated")
             yield()
         end
@@ -142,6 +145,6 @@ function vieweeg(filename)
 end
 
 
-const dims = (1200, 400)
+global dims = (1200, 400)
 const filename = "../test/EDFPlusTestFile.edf"
 vieweeg(filename)
