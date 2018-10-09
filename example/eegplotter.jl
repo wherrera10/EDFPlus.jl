@@ -1,6 +1,6 @@
 #=
 [eegplotter.jl]
-Version =  0.02
+Version =  0.021
 Author = "William Herrera"
 Copyright = "Copyright 2018 William Herrera"
 Created = "12 Jan 2018"
@@ -64,13 +64,12 @@ function plotpage(timepoints, page, ylabels, imgname, title)
     nchannels = size(page)[1]
     plt = Plots.plot(timepoints, page, layout=(nchannels+1,1),
                            xticks=collect(timepoints[1]:1:timepoints[end]),
-                           yticks=false, legend=false)
+                           yticks=false, legend=false, linetype=:line)
     for i in 1:nchannels
-        plt[i][:xaxis][:showaxis] = false
-        Plots.plot!(yaxis=true, subplot=i, tight_layout=true, ylabel = ylabels[i])
+        Plots.plot!(yaxis=true, xaxis=false, subplot=i, tight_layout=true, ylabel = ylabels[i])
     end
     plt[nchannels][:xaxis][:showaxis] = true
-    Plots.plot!(title = title, subplot=1, size=dims, xaxis=false)
+    Plots.plot!(title = title, subplot=1, size=dims)
     img = FileIO.load(imgname)
     plot!(img, aspect_ratio="auto",subplot=nchannels+1)
     plt
@@ -123,7 +122,7 @@ function vieweeg(filename)
     edfh = loadfile(filename)
     epages, timepoints, channelnames, imgname, title = eegpages(edfh)
     maxpage = length(epages)
-    plt = plotpage(timepoints, epages[1], channelnames, imgname, title)
+    plt = plotpage(timepoints, epages[2], channelnames, imgname, title)
     display(plt)
     fig = PyPlot.gcf()
     fig[:canvas][:mpl_connect]("button_press_event", onclick)
@@ -134,9 +133,11 @@ function vieweeg(filename)
         if needupdate
             needupdate = false
             newpage = epages[currentpage]
+            xdelta = (currentpage - 1) * timepoints[end]
+            mins, secs = Int.(floor.(divrem(xdelta, 60)))
             newtitle = replace(title, r".+\/([^\/]+)$" => s"\1")
-            newtitle *= " (Page $currentpage of $maxpage)"
-            display(plotpage(timepoints, newpage, channelnames, imgname, newtitle))
+            newtitle *= " (Page $currentpage of $maxpage: at $mins minutes, $secs seconds)"
+            display(plotpage(timepoints .+ xdelta, newpage, channelnames, imgname, newtitle))
             println("updated")
             yield()
         end
