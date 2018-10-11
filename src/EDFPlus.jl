@@ -1,7 +1,7 @@
 #=
 [EDFPlus.jl]
 Julia = 0.7
-Version = 0.61
+Version = 0.62
 Author = "William Herrera, partially as a port of EDFlib C code by Teunis van Beelen"
 Copyright = "Copyright for Julia code 2015, 2016, 2017, 2018 William Herrera"
 Created = "Dec 6 2015"
@@ -1433,8 +1433,8 @@ trim(ch::Char) = strip(string(ch))
 trim(bytes) = strip(String(bytes))
 
 
-""" trimrightzeros compact number string by trimming nonsignificant decimal places/point when not zero"""
-trimrightzeros(fstr) = reverse(replace(replace(reverse(fstr), r"^0+([^0].+)$" => s"\1"), r"^\.(.+)$" => s"\1"))
+""" trimrightzeros compact number string by trimming nonsignificant decimal places/point when not zero """
+trimrightzeros(fstr) = string(parse(Float64, fstr))
 
 
 """
