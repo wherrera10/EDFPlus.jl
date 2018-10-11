@@ -1434,7 +1434,7 @@ trim(bytes) = strip(String(bytes))
 
 
 """ trimrightzeros compact number string by trimming nonsignificant decimal places/point when not zero """
-trimrightzeros(fstr) =  (x = parse(Float64, str); return x == floor(x) ? string(Int64(x)) : string(x))
+trimrightzeros(fstr) =  (x = parse(Float64, fstr); return x == floor(x) ? string(Int64(x)) : string(x))
 
 
 """
