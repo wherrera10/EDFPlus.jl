@@ -1,6 +1,6 @@
 #=
 [eegplotter.jl]
-Version =  0.021
+Version =  0.022
 Author = "William Herrera"
 Copyright = "Copyright 2018 William Herrera"
 Created = "12 Jan 2018"
@@ -106,9 +106,9 @@ function vieweeg(filename)
         (width, height) = event[:canvas][:get_width_height]()
         global dims = (width, height)
         tmp = currentpage
-        if event[:key] == "+"
+        if event[:key] in ("up", "right", "pageup", "+")
             tmp = currentpage + 1
-        elseif event[:key] == "-"
+        elseif event[:key] in ("down", "left", "pagedown", "-")
             tmp = currentpage - 1
         else
             return
