@@ -1,7 +1,7 @@
 #=
 [EDFPlus.jl]
 Julia = 0.7
-Version = 0.62
+Version = 0.63
 Author = "William Herrera, partially as a port of EDFlib C code by Teunis van Beelen"
 Copyright = "Copyright for Julia code 2015, 2016, 2017, 2018 William Herrera"
 Created = "Dec 6 2015"
@@ -1495,6 +1495,39 @@ function latintoascii(str)
     end
     str
 end
+
+
+"""
+   signalchannel(edfh)
+
+Returns channel number of the Signal channel or nothing if none labeled Signal
+"""
+signalchannel(edfh) = find(x->x.label == "Signal", edfh.signalparam)
+
+
+"""
+    readBiosemiStatus(edfh)
+
+Export BDF Status channel data.
+# Returns a Dict structure containing trigger data in the format:
+-   Code => vector of triggerbit (Int),
+-   Index => vector of index data (Int)
+-   Onset => vector of onset times (Float)
+-   Duration => vector of durations (Float)
+"""
+function readBiosemiStatus(edfh, channel=signalchannel(edfh))
+    dict = Dict{String, Vector{Any}}()
+    timeperdatum =  edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
+    data = digitalchanneldata(edfh, channel)
+    dif = findall(x -> x != 0, diff(data))
+    starts = vcat(1, dif)
+    dict["Code"] = data[starts]
+    dict["Index"] = starts
+    dict["Onset"] = starts .* timeperdatum
+    dict["Duration"] = (starts .- vcat(dif, length(data))) .* timeperdatum
+    dict
+end
+
 
 
 end # module
