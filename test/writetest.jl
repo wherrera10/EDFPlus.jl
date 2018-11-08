@@ -12,7 +12,7 @@ addannotation!(edfh, ann.onset, ann.duration, ann.annotation)
 EDFPlus.latintoascii("")
 edfh.gender = "Male"
 edfh.signalparam[1].label = "Signal"
-@test readBiosemiStatus(edfh) isa Dict
+@test EDFPlus.readBiosemiStatus(edfh) isa Dict
 
 newedfh = writefile!(edfh, "NEWedfplustestfile.edf")
 @test size(newedfh.EDFsignals) == sz
