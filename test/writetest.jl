@@ -1,7 +1,6 @@
 using EDFPlus
 using Test
 
-
 edfh = loadfile("EDFPlusTestFile.edf")
 sz = size(edfh.EDFsignals)
 @test sz == (20010,601)
