@@ -15,6 +15,6 @@ Installation:
 To install from a Julia REPL command line session:
 
     using Pkg
-     Pkg.add(PackageSpec(url="http://github.com/wherrera10/EDFPlus.jl"))
+    Pkg.add("EDFPlus"))
 
 Note that the test files include a 23 mb test file. You may need to allow extra time for that to download when installing.
