@@ -1502,7 +1502,7 @@ end
 
 Returns channel number of the Signal channel or nothing if none labeled Signal
 """
-signalchannel(edfh) = find(x->x.label == "Signal", edfh.signalparam)
+signalchannel(edfh) = findfirst(x->x.label == "Signal", edfh.signalparam)
 
 
 """
