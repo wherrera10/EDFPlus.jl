@@ -4,7 +4,6 @@ uuid = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
 version = "0.7.0"
 
 [deps]
-Dates
-DSP
-IterTools
-
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+IterTools = "c8e1da08-722c-5040-9ed9-7db0dc04731e"
