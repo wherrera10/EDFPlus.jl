@@ -1,20 +1,14 @@
-# Documentation: http://docs.travis-ci.com/user/languages/julia/
 language: julia
 os:
   - linux
-  - osx
+#   - osx
 julia:
-  - nightly
-  - 1.0.4
+  - 1.1.0
+notifications:
+  email: false
 matrix:
   allow_failures:
     - julia: nightly
-notifications:
-  email: false
-script:
-#  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-  - julia --project=@.
-  - julia -e "Pkg.test(\"EDFPlus\",coverage=true)"
 after_success:
   - julia -e julia -e 'Pkg.add("Documenter")'
   - julia -e 'cd(Pkg.dir("EDFPlus")); include(joinpath("docs", "make.jl"))'
