@@ -4,5 +4,6 @@ using Test
 
 @test include("readtest.jl")
 @test include("writetest.jl")
+@test include("cover.jl")
 
 
