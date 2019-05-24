@@ -11,8 +11,5 @@ channeltimesegment(edfh, 1, 0.5, 1.5, true) != nothing
 multichanneltimesegment(edfh, [1], 0.25, 1.25, false) != nothing
 sg = physicalchanneldata(edfh, 2) != nothing
 (fs = samplerate(edfh, 2)) != nothing
-notchfilter(sg, fs) != nothing
-highpassfilter(sg, fs) != nothing
-highpassfilter(sg, fs) != nothing
-lowpassfilter(sg, fs) != nothing
+
 
