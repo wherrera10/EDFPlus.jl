@@ -116,8 +116,8 @@ mutable struct ChannelParam      # this structure contains all the relevant EDF-
   physdimension::String          # physical dimension (uV, bpm, mA, etc.)
   physmax::Float64               # physical maximum, usually the maximum input of the ADC
   physmin::Float64               # physical minimum, usually the minimum input of the ADC
-  digmax::Int                    # digital maximum, usually the maximum output of the ADC, cannot not be higher than 32767 for EDF or 8388607 for BDF
-  digmin::Int                    # digital minimum, usually the minimum output of the ADC, cannot not be lower than -32768 for EDF or -8388608 for BDF
+  digmax::Int                    # digital maximum, usually the maximum output of the ADC, cannot be higher than 32767 for EDF or 8388607 for BDF
+  digmin::Int                    # digital minimum, usually the minimum output of the ADC, cannot be lower than -32768 for EDF or -8388608 for BDF
   smp_per_record::Int            # number of samples of this signal in a datarecord
   prefilter::String              # channel prefiltering settings if any
   reserved::String               # header reserved ascii text, 32 bytes
@@ -408,7 +408,7 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     row2data = sigdata[row2, startpos:col2]
     if row2 - row1 > 1
         otherdata = sigdata[row1+1:row2-1, startpos:endpos]
-        row2data = vcat(otherdata[:], row2data)
+        row2data = vcat(vec(otherdata), row2data)
     end
     if physical
         return collect(Base.Iterators.flatten((vcat(row1data, row2data) .* multiplier)))
@@ -456,7 +456,7 @@ Get a single digital channel of data in its entirety.
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
     data = signaldata(edfh)[:, span[1]:span[2]]
-    data[:]
+    vec(data)
 end
 
 
@@ -1091,7 +1091,7 @@ function translate16to24bits!(edfh)
     endcol = startcol + edfh.signalparam[chan].smp_per_record - 1
     for rec in 1:edfh.datarecords
         arr::Array{Int32,1} = []
-        oby = reinterpret(UInt8, edfh.EDFsignals[rec, startcol:endcol][:])
+        oby = vec(reinterpret(UInt8, edfh.EDFsignals[rec, startcol:endcol]))
         for k in 1:3:length(oby) - 1
             push!(arr, reinterpret(Int32,[oby[k], oby[k+1], oby[k+2], UInt8(0)])[1])
         end
@@ -1125,7 +1125,7 @@ write a BDF record's worth of a signal channel at given record and channel numbe
 """
 function writeBDFsignalchannel(edfh,fh, record, channel)
     (startpos, endpos) = signalindices(edfh, channel)
-    signals = edfh.BDFsignals[record,startpos:endpos][:]
+    signals = vec(edfh.BDFsignals[record,startpos:endpos])
     written = 0
     for i in 1:length(signals)
         written += writei24(fh, signals[i])
@@ -1402,7 +1402,7 @@ function addannotation!(edfh, onset, duration, description)
         @warn("TAL is too large for adding to a channel of length $chanlen bytes")
     else
         for recordnum in neartimeindex:edfh.datarecords-1
-            ints = (signaldata(edfh)[recordnum, startpos:endpos])[:]
+            ints = vec(signaldata(edfh)[recordnum, startpos:endpos])
             ctxt = reinterpret(UInt8, ints)
             addindex = something(findlast(c -> c != 0, ctxt), 0) + 1
             if addindex > 0 && addindex + additionalbytes < length(ctxt)
