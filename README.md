@@ -11,7 +11,9 @@ Heavily influenced by the C EEG library edflib.
 ## License: 2-clause BSD.
 
 ## Functions
+
 <br /><br /><br />	
+    
     mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
         label::String                  # label (name) of the signal, eg "C4" if in 10-20 labeling terms
         transducer::String             # signal transducer type
@@ -134,10 +136,10 @@ Note that if the function converts from BDF to EDF or EDF to BDF, the edfh struc
     epoch_iterator(edfh, epochsecs; channels, startsec, endsec, physical)
 
 Make an iterator for EEG epochs of a given duration between start and stop times.
-# Required arguments
+Required arguments
 - edfh BEDFPlus struct
 - epochsecs second duration of each epoch
-# Optional arguments
+Optional arguments
 - channels List of channel numbers for data, defaults to all signal channels
 - startsec Starting position from 0 at start of file, defaults to file start
 - endsec Ending position in seconds from start of _file_, defaults to file end
@@ -181,7 +183,7 @@ Get a pair of indices of a channel's bytes within each of the data records
     digitalchanneldata(edfh, channelnumber)
 
 Get a single digital channel of data in its entirety.
-# Arguments:
+Arguments:
 - edfh          the BEDFPlus struct
 - channelnumber the channel number in the records
 <br /><br /><br />
@@ -191,7 +193,7 @@ Get a single digital channel of data in its entirety.
 
     physicalchanneldata(edfh, channelnumber)
 Get a single data channel in its entirely, in the physical units stated in the header
-# Arguments
+Arguments:
 - edfh          the BEDFPlus struct
 - channelnumber the channel number in the records-- a channel in the mapped_signals list
 <br /><br /><br />
@@ -334,7 +336,7 @@ Change non-ascii characters to similar ascii chars
     readBiosemiStatus(edfh)
 
 Export BDF Status channel data.
-# Returns a Dict structure containing trigger data in the format:
+Returns a Dict structure containing trigger data in the format:
 -   Code => vector of triggerbit (Int),
 -   Index => vector of index data (Int)
 -   Onset => vector of onset times (Float)
