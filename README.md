@@ -135,14 +135,17 @@ Note that if the function converts from BDF to EDF or EDF to BDF, the edfh struc
     epoch_iterator(edfh, epochsecs; channels, startsec, endsec, physical)
 
 Make an iterator for EEG epochs of a given duration between start and stop times.
-Required arguments
-- edfh BEDFPlus struct
-- epochsecs second duration of each epoch
-Optional arguments
-- channels List of channel numbers for data, defaults to all signal channels
-- startsec Starting position from 0 at start of file, defaults to file start
-- endsec Ending position in seconds from start of _file_, defaults to file end
-- physical Whether to return data as translated to the physical units, defaults to true
+Required arguments:
+
+- edfh: BEDFPlus struct
+- epochsecs: second duration of each epoch
+
+Optional arguments:
+
+- channels: List of channel numbers for data, defaults to all signal channels
+- startsec: Starting position from 0 at start of file, defaults to file start
+- endsec: Ending position in seconds from start of _file_, defaults to file end
+- physical: Whether to return data as translated to the physical units, defaults to true
 <br /><br /><br />
 
 
@@ -183,18 +186,21 @@ Get a pair of indices of a channel's bytes within each of the data records
 
 Get a single digital channel of data in its entirety.
 Arguments:
-- edfh          the BEDFPlus struct
-- channelnumber the channel number in the records
+
+- edfh:          the BEDFPlus struct
+- channelnumber: the channel number in the records
 <br /><br /><br />
 
 
 
 
     physicalchanneldata(edfh, channelnumber)
+    
 Get a single data channel in its entirely, in the physical units stated in the header
 Arguments:
-- edfh          the BEDFPlus struct
-- channelnumber the channel number in the records-- a channel in the mapped_signals list
+
+- edfh:          the BEDFPlus struct
+- channelnumber: the channel number in the records-- a channel in the mapped_signals list
 <br /><br /><br />
 
 
@@ -335,11 +341,13 @@ Change non-ascii characters to similar ascii chars
     readBiosemiStatus(edfh)
 
 Export BDF Status channel data.
+
 Returns a Dict structure containing trigger data in the format:
--   Code => vector of triggerbit (Int),
--   Index => vector of index data (Int)
--   Onset => vector of onset times (Float)
--   Duration => vector of durations (Float)
+
+-   Code: => vector of triggerbit (Int),
+-   Index: => vector of index data (Int)
+-   Onset: => vector of onset times (Float)
+-   Duration: => vector of durations (Float)
 <br /><br /><br />
 
 
