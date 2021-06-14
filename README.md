@@ -8,11 +8,9 @@ Julia for handling BDF+ and EDF+ EEG and similar signal data files.
 
 Heavily influenced by the C EEG library edflib.
 
-## License: 2-clause BSD.
-
 ## Functions
 
-<br /><br /><br />	
+### Structs:	
     
     mutable struct ChannelParam      # this structure contains all the relevant EDF-signal parameters of one signal
         label::String                  # label (name) of the signal, eg "C4" if in 10-20 labeling terms
@@ -112,6 +110,7 @@ enum for types this package handles. Current format for a potential translation 
 enum for type or state of file: type of data detected, whether any errors
 <br /><br /><br />
 
+### Methods:
 
     loadfile(path::String, read_annotations=true)
 
