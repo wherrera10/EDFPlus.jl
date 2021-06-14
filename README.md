@@ -8,7 +8,7 @@ Julia for handling BDF+ and EDF+ EEG and similar signal data files.
 
 Heavily influenced by the C EEG library edflib.
 
-## Functions
+## Data Structs and Functions
 
 ### Structs:	
     
@@ -110,7 +110,7 @@ enum for types this package handles. Current format for a potential translation 
 enum for type or state of file: type of data detected, whether any errors
 <br /><br /><br />
 
-### Methods:
+### Functions:
 
     loadfile(path::String, read_annotations=true)
 
