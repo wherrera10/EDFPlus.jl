@@ -1,7 +1,7 @@
 authors = ["William Herrera <wherrera@alahonua.com>"]
 name = "EDFPlus"
 uuid = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
-version = "0.7.1"
+version = "0.1.0"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
