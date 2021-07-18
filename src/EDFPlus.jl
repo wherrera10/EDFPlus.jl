@@ -230,7 +230,7 @@ function loadfile(path::String, read_annotations=true)
     end
     readdata!(edfh)
     edfh.path = path
-    edfh
+    return edfh
 end
 
 """
@@ -293,13 +293,15 @@ function writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
         close(fh)
         newedfh = loadfile(newpath, true)
         println("$newpath written successfully, $written bytes.")
-        newedfh
+        return newedfh
     elseif sigformat == edf
         @warn("Converting file to $newpath as an EDF compatible EDF+ file.")
         writefile!(edfh, newpath, acquire=acquire, sigformat=edfplus)
+        return edfh
     elseif sigformat == bdf
         @warn("Converting file to $newpath as a BDF compatible BDF+ file.")
         writefile!(edfh, newpath, acquire=acquire, sigformat=bdfplus)
+        return edfh
     else
         throw("Unknown signal file write format request: $sigformat")
     end
@@ -323,7 +325,7 @@ function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                               startsec=0, endsec=edfh.file_duration, physical=true)
     epochs = collect(startsec:epochsecs:endsec)[begin:end-1]
     epochwidth = epochs[begin+1] - epochs[begin]
-    imap(x -> multichanneltimesegment(edfh, channels, x, x + epochwidth, physical), epochs)
+    return imap(x -> multichanneltimesegment(edfh, channels, x, x + epochwidth, physical), epochs)
 end
 
 
@@ -341,7 +343,7 @@ function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file
         markers = map(t->signalat(edfh, t, achan), epochs)
     end
     epochwidth = markers[begin+1][begin] - markers[begin][begin]
-    imap(x -> edfh.annotations[x[begin]:x[begin]+epochwidth], markers[begin:end-1])
+    return imap(x -> edfh.annotations[x[begin]:x[begin]+epochwidth], markers[begin:end-1])
 end
 
 
@@ -402,7 +404,7 @@ function multichanneltimesegment(edfh, chanlist, startsec, endsec, physical)
     for chan in chanlist
         push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical))
     end
-    mdata
+    return mdata
 end
 
 
@@ -414,7 +416,7 @@ Get a pair of indices of a channel's bytes within each of the data records
 function signalindices(edfh, channelnumber)
     startcol = Int(floor(edfh.signalparam[channelnumber].bufoffset / bytesperdatapoint(edfh))) + 1
     endcol = startcol + edfh.signalparam[channelnumber].smp_per_record - 1
-    (startcol, endcol)
+    return (startcol, endcol)
 end
 
 
@@ -429,7 +431,7 @@ Get a single digital channel of data in its entirety.
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
     data = signaldata(edfh)[:, span[begin]:span[begin+1]]
-    vec(data)
+    return vec(data)
 end
 
 
@@ -449,7 +451,7 @@ function physicalchanneldata(edfh, channel)
     if length(digdata) < 1
         return digdata
     end
-    digdata * edfh.signalparam[channel].bitvalue
+    return digdata * edfh.signalparam[channel].bitvalue
 end
 
 
@@ -468,7 +470,7 @@ Notch filter signals in array signals, return filtered signals
 """
 function notchfilter(signals, fs, notchfreq = 60, q = 35)
     wdo = 2.0 * notchfreq / fs
-    filtfilt(iirnotch(wdo, wdo / q), signals)
+    return filtfilt(iirnotch(wdo, wdo / q), signals)
 end
 
 
@@ -480,7 +482,7 @@ Apply high pass filter to signals, return filtered data
 function highpassfilter(signals, fs, cutoff = 1.0, order=4)
     wdo = 2.0 * cutoff / fs
     filth = digitalfilter(Highpass(wdo), Butterworth(order))
-    filtfilt(filth, signals)
+    return filtfilt(filth, signals)
 end
 
 
@@ -492,7 +494,7 @@ Apply low pass filter to signals, return filtered data
 function lowpassfilter(signals, fs, cutoff = 25.0, order=4)
     wdo = 2.0 * cutoff / fs
     filtl = digitalfilter(Lowpass(wdo), Butterworth(order))
-    filtfilt(filtl, signals)
+    return filtfilt(filtl, signals)
 end
 
 
@@ -507,7 +509,7 @@ function closefile!(edfh)
     edfh.BDFsignals = Array{Int32,2}(undef, 0, 0)
     close(edfh.ios)
     edfh.filetype = CLOSED
-    return 0
+    return nothing
 end
 
 
@@ -543,7 +545,7 @@ function readdata!(edfh)
             end
         end
     end
-    0
+    return 0
 end
 
 
@@ -574,7 +576,7 @@ bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
 Time interval in fractions of a second between individual signal data points
 """
 function datapointinterval(edfh, channel=edfh.mapped_signals[1])
-    edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
+    return edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
 end
 
 
@@ -598,7 +600,7 @@ function recordindexat(edfh, secondsafterstart)
     end
     # for continuous files, we do not need to check any annotation channel
     pos = Int(floor(secondsafterstart/Float64(edfh.datarecord_duration))) + 1
-    pos > edfh.datarecords ? edfh.datarecords : pos
+    return pos > edfh.datarecords ? edfh.datarecords : pos
 end
 
 
@@ -615,7 +617,7 @@ function signalat(edfh, secondsafter, channel=edfh.mapped_signals[begin])
     seconddif = seconddiff < 0.0 ? 0.0 : seconddiff
     startpos, endpos = signalindices(edfh, channel)
     col = startpos + Int(floor(seconddiff / datapointinterval(edfh, channel)))
-    (row, col > endpos ? endpos : col)
+    return (row, col > endpos ? endpos : col)
 end
 
 """
@@ -944,7 +946,7 @@ function checkfile!(edfh)
         edfh.signalparam[i].offset = edfh.signalparam[i].physmax / edfh.signalparam[i].bitvalue -
                                     edfh.signalparam[i].digmax
     end
-    edfh
+    return edfh
 end
 
 
@@ -995,7 +997,7 @@ function readannotations!(edfh)
             return -1
         end
     end
-    added
+    return added
 end
 
 
@@ -1044,7 +1046,7 @@ function translate24to16bits!(edfh)
         end
         edfh.EDFsignals[rec, startcol:endcol] .= reinterpret(Int16, arr)
     end
-    0
+    return 0
 end
 
 
@@ -1073,7 +1075,7 @@ function translate16to24bits!(edfh)
         end
         edfh.BDFsignals[rec, startcol:endcol] .= arr
     end
-    0
+    return 0
 end
 
 
@@ -1086,7 +1088,7 @@ write a record's worth of a signal channel at given record and channel number
 function writeEDFsignalchannel(edfh, fh, record, channel)
     (startpos, endpos) = signalindices(edfh, channel)
     signals = edfh.EDFsignals[record,startpos:endpos]
-    write(fh, signals)
+    return write(fh, signals)
 end
 
 
@@ -1103,7 +1105,7 @@ function writeBDFsignalchannel(edfh,fh, record, channel)
     for i in 1:length(signals)
         written += writei24(fh, signals[i])
     end
-    written
+    return written
 end
 
 
@@ -1128,7 +1130,7 @@ function writeEDFrecords!(edfh, fh)
             written += writeEDFsignalchannel(edfh, fh, i, j)
         end
     end
-    written
+    return written
 end
 
 
@@ -1153,7 +1155,7 @@ function writeBDFrecords!(edfh, fh)
             written += writeBDFsignalchannel(edfh, fh, i, j)
         end
     end
-    written
+    return written
 end
 
 
@@ -1215,7 +1217,7 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
             pidbytes *= " "
         end
     end
-    written += write(fh, pidbytes)
+    return written += write(fh, pidbytes)
 
     if edfh.startdate_year != 0
         date = DateTime(edfh.startdate_year, edfh.startdate_month, edfh.startdate_day,
@@ -1314,7 +1316,7 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     for i in 1:channelcount
         written += writeleftjust(fh, edfh.reserved, 32)
     end
-    written
+    return written
 end
 
 
@@ -1334,7 +1336,7 @@ function annotationtoTAL(ann)
         anntxt = ann.annotation[1]
     end
     txt *= "\x14" * anntxt * "\x14\x00"
-    txt
+    return txt
 end
 
 
@@ -1393,7 +1395,7 @@ function addannotation!(edfh, onset, duration, description)
             end
         end
     end
-    0
+    return 0
 end
 
 
@@ -1466,7 +1468,7 @@ function latintoascii(str)
             end
         end
     end
-    str
+    return str
 end
 
 
@@ -1498,7 +1500,7 @@ function readBiosemiStatus(edfh, channel=signalchannel(edfh))
     dict["Index"] = starts
     dict["Onset"] = starts .* timeperdatum
     dict["Duration"] = (starts .- vcat(dif, length(data))) .* timeperdatum
-    dict
+    return dict
 end
 
 
