@@ -323,8 +323,8 @@ Make an iterator for EEG epochs of a given duration between start and stop times
 """
 function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                               startsec=0, endsec=edfh.file_duration, physical=true)
-    epochs = collect(startsec:epochsecs:endsec)[begin:end-1]
-    epochwidth = epochs[begin+1] - epochs[begin]
+    epochs = collect(startsec:epochsecs:endsec)[1:end-1]
+    epochwidth = epochs[2] - epochs[1]
     return imap(x -> multichanneltimesegment(edfh, channels, x, x + epochwidth, physical), epochs)
 end
 
@@ -342,8 +342,8 @@ function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file
     else
         markers = map(t->signalat(edfh, t, achan), epochs)
     end
-    epochwidth = markers[begin+1][begin] - markers[begin][begin]
-    return imap(x -> edfh.annotations[x[begin]:x[begin]+epochwidth], markers[begin:end-1])
+    epochwidth = markers[2][2] - markers[1][1]
+    return imap(x -> edfh.annotations[x[1]:x[1]+epochwidth], markers[1:end-1])
 end
 
 
