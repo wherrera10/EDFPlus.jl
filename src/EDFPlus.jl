@@ -430,7 +430,7 @@ Get a single digital channel of data in its entirety.
 """
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
-    data = signaldata(edfh)[:, span[begin]:span[begin+1]]
+    data = signaldata(edfh)[:, span[1]:span[2]]
     return vec(data)
 end
 
@@ -591,7 +591,7 @@ function recordindexat(edfh, secondsafterstart)
     if edfh.discontinuous && edfh.edfplus
         # for EDF+D need to go on annotations about times
         for i in 2:edfh.datarecords
-            firstannot = edfh.annotations[i][begin]
+            firstannot = edfh.annotations[i][1]
             if secondsafterstart < firstannot.onset
                 return i - 1
             end
@@ -611,7 +611,7 @@ Get the position in the signal data of the data point at or closest after a
 given time from recording start. Translates a value in seconds to a position
 in the signal channel matrix, returns that signal data point's 2D position as list
 """
-function signalat(edfh, secondsafter, channel=edfh.mapped_signals[begin])
+function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     row = recordindexat(edfh, secondsafter)
     seconddiff = round(secondsafter - edfh.datarecord_duration * (row - 1), digits = 4)
     seconddif = seconddiff < 0.0 ? 0.0 : seconddiff
