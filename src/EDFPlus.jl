@@ -366,7 +366,7 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     sigdata = signaldata(edfh)
     if startsec >= endsec || startsec > edfh.file_duration
         @warn("bad parameters for channeltimesegment")
-        return sigdata[begin, end:1]  # empty but type correct
+        return sigdata[1, end:1]  # empty but type correct
     elseif endsec > edfh.file_duration
         @warn("bad end parameter for channeltimesegment")
         endsec = edfh.file_duration
