@@ -4,12 +4,18 @@ using Dates
 using IterTools
 using Core.Intrinsics
 
+
+if VERSION < v"0.7.0"
+    @warn("This version of EDFPlus requires Julia 0.7 or above.")
+end
+
 export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
        loadfile, writefile!, closefile!, samplerate, addannotation!,
        epoch_iterator, annotation_epoch_iterator, readBiosemiStatus,
        digitalchanneldata, physicalchanneldata,
        channeltimesegment, multichanneltimesegment,
        highpassfilter, lowpassfilter, notchfilter, trim
+
 
 #
 # Except for some of the data structures and constants, most of this code is a
@@ -48,9 +54,11 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
 #           https://www.biosemi.com/faq/file_format.htm
 #
 
+
 const EDFPLUS_VERSION = 0.59
 const MAX_CHANNELS =          512
 const MAX_ANNOTATION_LENGTH = 512
+
 
 """
     DataFormat
@@ -58,11 +66,13 @@ enum for types this package handles. Current format for a potential translation 
 """
 @enum DataFormat bdf bdfplus edf edfplus same
 
+
 """
     FileStatus
 enum for type or state of file: type of data detected, whether any errors
 """
 @enum FileStatus EDF EDFPLUS BDF BDFPLUS READ_ERROR FORMAT_ERROR CLOSED
+
 
 """
     type Int24
@@ -81,8 +91,10 @@ function writei24(stream::IO, x)
     write(stream, [b1, b2, b3])
 end
 
+
 """ static function to state version of module """
 version() = EDFPLUS_VERSION
+
 
 """
     mutable struct ChannelParam
@@ -106,6 +118,7 @@ mutable struct ChannelParam      # this structure contains all the relevant EDF-
   ChannelParam() = new("","","",0.0,0.0,0,0,0,"","",0.0,0,0.0,false)
 end
 
+
 """
     mutable struct Annotation
 
@@ -125,6 +138,7 @@ end
 const MAX_ANNOTATION_TEXT_LENGTH = 40
 # minimum length per record of annotation channnel (for writing a new file)
 const MIN_ANNOTATION_CHANNEL_LENGTH = 120
+
 
 """
     mutable struct BEDFPlus
@@ -180,6 +194,7 @@ mutable struct BEDFPlus                   # signal file data for EDF, BDF, EDF+,
                         Array{Array{Annotation,1},1}(undef,0),Array{Int16,2}(undef,0,0),Array{Int32,2}(undef,0,0))
 end
 
+
 """
     loadfile(path::String, read_annotations=true)
 
@@ -230,8 +245,9 @@ function loadfile(path::String, read_annotations=true)
     end
     readdata!(edfh)
     edfh.path = path
-    return edfh
+    edfh
 end
+
 
 """
     writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
@@ -293,19 +309,18 @@ function writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
         close(fh)
         newedfh = loadfile(newpath, true)
         println("$newpath written successfully, $written bytes.")
-        return newedfh
+        newedfh
     elseif sigformat == edf
         @warn("Converting file to $newpath as an EDF compatible EDF+ file.")
         writefile!(edfh, newpath, acquire=acquire, sigformat=edfplus)
-        return edfh
     elseif sigformat == bdf
         @warn("Converting file to $newpath as a BDF compatible BDF+ file.")
         writefile!(edfh, newpath, acquire=acquire, sigformat=bdfplus)
-        return edfh
     else
         throw("Unknown signal file write format request: $sigformat")
     end
 end
+
 
 """
     epoch_iterator(edfh, epochsecs; channels, startsec, endsec, physical)
@@ -325,7 +340,7 @@ function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
                               startsec=0, endsec=edfh.file_duration, physical=true)
     epochs = collect(startsec:epochsecs:endsec)[1:end-1]
     epochwidth = epochs[2] - epochs[1]
-    return imap(x -> multichanneltimesegment(edfh, channels, x, x + epochwidth, physical), epochs)
+    imap(x -> multichanneltimesegment(edfh,channels,x,x+epochwidth, physical), epochs)
 end
 
 
@@ -338,12 +353,12 @@ function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file
     epochs = collect(startsec:epochsecs:endsec)
     achan = edfh.annotationchannel
     if length(epochs) < 2
-        markers = [signalat(edfh, startsec, achan), signalat(edfh, endsec, achan)]
+        markers = [signalat(edfh,startsec, achan), signalat(edfh,endsec, achan)]
     else
-        markers = map(t->signalat(edfh, t, achan), epochs)
+        markers = map(t->signalat(edfh,t, achan), epochs)
     end
-    epochwidth = markers[2][2] - markers[1][1]
-    return imap(x -> edfh.annotations[x[1]:x[1]+epochwidth], markers[1:end-1])
+    epochwidth = markers[2][1] - markers[1][1]
+    imap(x -> edfh.annotations[x[1]:x[1]+epochwidth], markers[1:end-1])
 end
 
 
@@ -366,7 +381,7 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     sigdata = signaldata(edfh)
     if startsec >= endsec || startsec > edfh.file_duration
         @warn("bad parameters for channeltimesegment")
-        return sigdata[1, end:1]  # empty but type correct
+        return sigdata[1,end:1]  # empty but type correct
     elseif endsec > edfh.file_duration
         @warn("bad end parameter for channeltimesegment")
         endsec = edfh.file_duration
@@ -404,7 +419,7 @@ function multichanneltimesegment(edfh, chanlist, startsec, endsec, physical)
     for chan in chanlist
         push!(mdata, channeltimesegment(edfh, chan, startsec, endsec, physical))
     end
-    return mdata
+    mdata
 end
 
 
@@ -416,7 +431,7 @@ Get a pair of indices of a channel's bytes within each of the data records
 function signalindices(edfh, channelnumber)
     startcol = Int(floor(edfh.signalparam[channelnumber].bufoffset / bytesperdatapoint(edfh))) + 1
     endcol = startcol + edfh.signalparam[channelnumber].smp_per_record - 1
-    return (startcol, endcol)
+    (startcol, endcol)
 end
 
 
@@ -431,7 +446,7 @@ Get a single digital channel of data in its entirety.
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
     data = signaldata(edfh)[:, span[1]:span[2]]
-    return vec(data)
+    vec(data)
 end
 
 
@@ -451,7 +466,7 @@ function physicalchanneldata(edfh, channel)
     if length(digdata) < 1
         return digdata
     end
-    return digdata * edfh.signalparam[channel].bitvalue
+    digdata * edfh.signalparam[channel].bitvalue
 end
 
 
@@ -464,37 +479,37 @@ samplerate(edfh, channel) = edfh.signalparam[channel].smp_per_record / edfh.data
 
 
 """
-    notchfilter(signals, fs, notchfreq = 60, q = 35)
+    notchfilter(signals, fs, notchfreq=60, q = 35)
 
 Notch filter signals in array signals, return filtered signals
 """
-function notchfilter(signals, fs, notchfreq = 60, q = 35)
-    wdo = 2.0 * notchfreq / fs
-    return filtfilt(iirnotch(wdo, wdo / q), signals)
+function notchfilter(signals, fs, notchfreq=60, q = 35)
+    wdo = 2.0notchfreq/fs
+    filtfilt(iirnotch(wdo, wdo/q), signals)
 end
 
 
 """
-    highpassfilter(signals, fs, cutoff = 1.0, order=4)
+    highpassfilter(signals, fs, cutoff=1.0, order=4)
 
 Apply high pass filter to signals, return filtered data
 """
-function highpassfilter(signals, fs, cutoff = 1.0, order=4)
-    wdo = 2.0 * cutoff / fs
+function highpassfilter(signals, fs, cutoff=1.0, order=4)
+    wdo = 2.0cutoff/fs
     filth = digitalfilter(Highpass(wdo), Butterworth(order))
-    return filtfilt(filth, signals)
+    filtfilt(filth, signals)
 end
 
 
 """
-    lowpassfilter(signals, fs, cutoff = 25.0, order=4)
+    lowpassfilter(signals, fs, cutoff=25.0, order=4)
 
 Apply low pass filter to signals, return filtered data
 """
-function lowpassfilter(signals, fs, cutoff = 25.0, order=4)
-    wdo = 2.0 * cutoff / fs
+function lowpassfilter(signals, fs, cutoff=25.0, order=4)
+    wdo = 2.0cutoff/fs
     filtl = digitalfilter(Lowpass(wdo), Butterworth(order))
-    return filtfilt(filtl, signals)
+    filtfilt(filtl, signals)
 end
 
 
@@ -509,7 +524,7 @@ function closefile!(edfh)
     edfh.BDFsignals = Array{Int32,2}(undef, 0, 0)
     close(edfh.ios)
     edfh.filetype = CLOSED
-    return nothing
+    0
 end
 
 
@@ -535,7 +550,7 @@ function readdata!(edfh)
             cbuf = read(edfh.ios, (edfh.signalparam[j].smp_per_record * bytesperdatapoint(edfh)))
             if edfh.bdf || edfh.bdfplus
                 for k in 1:3:length(cbuf)-1
-                    edfh.BDFsignals[i, columnstart] = Int(reinterpret(Int24, cbuf[k:k+2])[1])
+                    edfh.BDFsignals[i,columnstart] = Int(reinterpret(Int24, cbuf[k:k+2])[1])
                     columnstart += 1
                 end
             else
@@ -545,7 +560,7 @@ function readdata!(edfh)
             end
         end
     end
-    return 0
+    0
 end
 
 
@@ -576,7 +591,7 @@ bytesperdatapoint(edfh) = (edfh.bdfplus || edfh.bdf ) ? 3 : 2
 Time interval in fractions of a second between individual signal data points
 """
 function datapointinterval(edfh, channel=edfh.mapped_signals[1])
-    return edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
+    edfh.datarecord_duration / edfh.signalparam[channel].smp_per_record
 end
 
 
@@ -600,7 +615,7 @@ function recordindexat(edfh, secondsafterstart)
     end
     # for continuous files, we do not need to check any annotation channel
     pos = Int(floor(secondsafterstart/Float64(edfh.datarecord_duration))) + 1
-    return pos > edfh.datarecords ? edfh.datarecords : pos
+    pos > edfh.datarecords ? edfh.datarecords : pos
 end
 
 
@@ -613,11 +628,11 @@ in the signal channel matrix, returns that signal data point's 2D position as li
 """
 function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     row = recordindexat(edfh, secondsafter)
-    seconddiff = round(secondsafter - edfh.datarecord_duration * (row - 1), digits = 4)
+    seconddiff = round(secondsafter - edfh.datarecord_duration * (row-1), digits=4)
     seconddif = seconddiff < 0.0 ? 0.0 : seconddiff
     startpos, endpos = signalindices(edfh, channel)
     col = startpos + Int(floor(seconddiff / datapointinterval(edfh, channel)))
-    return (row, col > endpos ? endpos : col)
+    (row, col > endpos ? endpos : col)
 end
 
 """
@@ -946,7 +961,7 @@ function checkfile!(edfh)
         edfh.signalparam[i].offset = edfh.signalparam[i].physmax / edfh.signalparam[i].bitvalue -
                                     edfh.signalparam[i].digmax
     end
-    return edfh
+    edfh
 end
 
 
@@ -997,7 +1012,7 @@ function readannotations!(edfh)
             return -1
         end
     end
-    return added
+    added
 end
 
 
@@ -1046,7 +1061,7 @@ function translate24to16bits!(edfh)
         end
         edfh.EDFsignals[rec, startcol:endcol] .= reinterpret(Int16, arr)
     end
-    return 0
+    0
 end
 
 
@@ -1075,7 +1090,7 @@ function translate16to24bits!(edfh)
         end
         edfh.BDFsignals[rec, startcol:endcol] .= arr
     end
-    return 0
+    0
 end
 
 
@@ -1088,7 +1103,7 @@ write a record's worth of a signal channel at given record and channel number
 function writeEDFsignalchannel(edfh, fh, record, channel)
     (startpos, endpos) = signalindices(edfh, channel)
     signals = edfh.EDFsignals[record,startpos:endpos]
-    return write(fh, signals)
+    write(fh, signals)
 end
 
 
@@ -1105,7 +1120,7 @@ function writeBDFsignalchannel(edfh,fh, record, channel)
     for i in 1:length(signals)
         written += writei24(fh, signals[i])
     end
-    return written
+    written
 end
 
 
@@ -1130,7 +1145,7 @@ function writeEDFrecords!(edfh, fh)
             written += writeEDFsignalchannel(edfh, fh, i, j)
         end
     end
-    return written
+    written
 end
 
 
@@ -1155,7 +1170,7 @@ function writeBDFrecords!(edfh, fh)
             written += writeBDFsignalchannel(edfh, fh, i, j)
         end
     end
-    return written
+    written
 end
 
 
@@ -1217,7 +1232,7 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
             pidbytes *= " "
         end
     end
-    return written += write(fh, pidbytes)
+    written += write(fh, pidbytes)
 
     if edfh.startdate_year != 0
         date = DateTime(edfh.startdate_year, edfh.startdate_month, edfh.startdate_day,
@@ -1316,7 +1331,7 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     for i in 1:channelcount
         written += writeleftjust(fh, edfh.reserved, 32)
     end
-    return written
+    written
 end
 
 
@@ -1336,7 +1351,7 @@ function annotationtoTAL(ann)
         anntxt = ann.annotation[1]
     end
     txt *= "\x14" * anntxt * "\x14\x00"
-    return txt
+    txt
 end
 
 
@@ -1395,7 +1410,7 @@ function addannotation!(edfh, onset, duration, description)
             end
         end
     end
-    return 0
+    0
 end
 
 
@@ -1468,7 +1483,7 @@ function latintoascii(str)
             end
         end
     end
-    return str
+    str
 end
 
 
@@ -1500,7 +1515,7 @@ function readBiosemiStatus(edfh, channel=signalchannel(edfh))
     dict["Index"] = starts
     dict["Onset"] = starts .* timeperdatum
     dict["Duration"] = (starts .- vcat(dif, length(data))) .* timeperdatum
-    return dict
+    dict
 end
 
 
