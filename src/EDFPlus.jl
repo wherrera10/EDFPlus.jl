@@ -15,7 +15,6 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
        channeltimesegment, multichanneltimesegment,
        highpassfilter, lowpassfilter, notchfilter, trim
 
-
 #
 # Except for some of the data structures and constants, most of this code is a
 # complete rewrite of the C version. Other C ports will need different API calls.
@@ -52,7 +51,6 @@ export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
 # See also: https://www.edfplus.info/specs/edffaq.html and
 #           https://www.biosemi.com/faq/file_format.htm
 #
-
 
 const EDFPLUS_VERSION = 0.59
 const MAX_CHANNELS =          512
@@ -1088,8 +1086,8 @@ function writeBDFsignalchannel(edfh,fh, record, channel)
     (startpos, endpos) = signalindices(edfh, channel)
     signals = vec(edfh.BDFsignals[record,startpos:endpos])
     written = 0
-    for i in 1:length(signals)
-        written += writei24(fh, signals[i])
+    for sig in signals
+        written += writei24(fh, sig)
     end
     return written
 end
@@ -1135,7 +1133,7 @@ function writeBDFrecords!(edfh, fh)
     end
     written = 0
     for i in 1:edfh.datarecords
-        for j in 1:length(edfh.signalparam)
+        for j in eachindex(edfh.signalparam)
             written += writeBDFsignalchannel(edfh, fh, i, j)
         end
     end
@@ -1315,7 +1313,7 @@ function annotationtoTAL(ann)
     if length(ann.annotation) > 1
         anntxt = join(ann.annotation, "\x14")
     else
-        anntxt = ann.annotation[1]
+        anntxt = first(ann.annotation)
     end
     txt *= "\x14" * anntxt * "\x14\x00"
     return txt
@@ -1444,7 +1442,7 @@ function latintoascii(str)
             end
         end
     end
-    str
+    return str
 end
 
 """
@@ -1474,7 +1472,7 @@ function readBiosemiStatus(edfh, channel=signalchannel(edfh))
     dict["Index"] = starts
     dict["Onset"] = starts .* timeperdatum
     dict["Duration"] = (starts .- vcat(dif, length(data))) .* timeperdatum
-    dict
+    return dict
 end
 
 end # module
