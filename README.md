@@ -4,6 +4,7 @@
 
 [![Build status](https://ci.appveyor.com/api/projects/status/cfw6pe03rfn9qsoo?svg=true)](https://ci.appveyor.com/project/wherrera10/edfplus.jl)
 [![Build Status](https://travis-ci.com/wherrera10/EDFPlus.jl.svg?branch=master)](https://travis-ci.com/wherrera10/EDFPlus.jl)
+[![CI](https://github.com/wherrera10/EDFPlus.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/wherrera10/EDFPlus.jl/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/wherrera10/EDFPlus.jl/badge.svg)](https://coveralls.io/github/wherrera10/EDFPlus.jl)
 
 Julia for handling BDF+ and EDF+ EEG and similar signal data files.
