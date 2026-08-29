@@ -77,12 +77,15 @@ The module caches these after reading as Int32 to fit LLVM CPU registers.
 """
 primitive type Int24 24 end
 Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
-Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
+Base.Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
 function writei24(stream::IO, x)
     b1::UInt8 = x & 0xff
     b2::UInt8 = (x >> 8) & 0xff
     b3::UInt8 = (x >> 16) & 0xff
     write(stream, [b1, b2, b3])
+end
+function merge3bytes(x::NTuple{3,UInt8})
+    Int32(x[1]) | Int32(x[2])<<8 | Int32(x[3])<<16
 end
 
 """ static function to state version of module """
@@ -527,7 +530,7 @@ function readdata!(edfh)
             cbuf = read(edfh.ios, (edfh.signalparam[j].smp_per_record * bytesperdatapoint(edfh)))
             if edfh.bdf || edfh.bdfplus
                 for k in 1:3:length(cbuf)-1
-                    edfh.BDFsignals[i,columnstart] = Int(reinterpret(Int24, cbuf[k:k+2])[1])
+                    edfh.BDFsignals[i,columnstart] = merge3bytes((cbuf[k], cbuf[k+1], cbuf[k+2]))
                     columnstart += 1
                 end
             else
