@@ -79,11 +79,8 @@ end
     Sign-extend signed Int24 24-bit value to signed Int32
 """
 function merge3bytes(x::NTuple{3,UInt8})::Int32
-    u = UInt32(x[1]) | (UInt32(x[2]) << 8) | (UInt32(x[3]) << 16)
-    if (u & 0x00800000) != 0
-        u |= 0xff000000
-    end
-    return reinterpret(Int32, u)
+    u = Int32(x[1]) | (Int32(x[2]) << 8) | (Int32(x[3]) << 16)
+    return (u << 8) >> 8 # Sign extent u
 end
 
 """ Drop the unused high padding byte of each in-memory Int32 holding a 24-bit BDF sample """
