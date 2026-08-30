@@ -80,7 +80,7 @@ end
 """
 function merge3bytes(x::NTuple{3,UInt8})::Int32
     u = Int32(x[1]) | (Int32(x[2]) << 8) | (Int32(x[3]) << 16)
-    return (u << 8) >> 8 # Sign extent u
+    return (u << 8) >> 8 # Sign extend u
 end
 
 """ Drop the unused high padding byte of each in-memory Int32 holding a 24-bit BDF sample """
