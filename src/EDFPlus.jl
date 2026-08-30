@@ -535,7 +535,7 @@ function readdata!(edfh)
                 end
             else
                 intarray = reinterpret(Int16, cbuf)
-                edfh.EDFsignals[i, columnstart:columnstart+length(intarray)-1] = intarray
+                edfh.EDFsignals[i, columnstart:columnstart+length(intarray)-1] = ntoh.(intarray)
                 columnstart += length(intarray)
             end
         end
