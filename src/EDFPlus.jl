@@ -68,16 +68,6 @@ enum for type or state of file: type of data detected, whether any errors
 """
 @enum FileStatus EDF EDFPLUS BDF BDFPLUS READ_ERROR FORMAT_ERROR CLOSED
 
-"""
-    type Int24
-
-# 24-bit integer routines for BDF format signal data.
-BDF and BDF+ files use 24 bits per data signal point.
-The module caches these after reading as Int32 to fit LLVM CPU registers.
-"""
-primitive type Int24 24 end
-Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
-Base.Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
 function writei24(stream::IO, x)
     b1::UInt8 = x & 0xff
     b2::UInt8 = (x >> 8) & 0xff
@@ -89,11 +79,8 @@ end
     Sign-extend signed Int24 24-bit value to signed Int32
 """
 function merge3bytes(x::NTuple{3,UInt8})::Int32
-    u = UInt32(x[1]) | (UInt32(x[2]) << 8) | (UInt32(x[3]) << 16)
-    if (u & 0x00800000) != 0
-        u |= 0xff000000
-    end
-    return reinterpret(Int32, u)
+    u = Int32(x[1]) | (Int32(x[2]) << 8) | (Int32(x[3]) << 16)
+    return (u << 8) >> 8 # Sign extend u
 end
 
 """ Drop the unused high padding byte of each in-memory Int32 holding a 24-bit BDF sample """
@@ -399,20 +386,21 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     row1, col1 = signalat(edfh, startsec, channel)
     row2, col2 = signalat(edfh, endsec, channel)
     multiplier = edfh.signalparam[channel].bitvalue
+    adder = edfh.signalparam[channel].offset
     if row1 == row2
-        return physical ? sigdata[row1, col1:col2] .* multiplier : sigdata[row1, col1:col2]
+        return physical ? (sigdata[row1, col1:col2] .+ adder) .* multiplier : sigdata[row1, col1:col2]
     end
     startpos, endpos = signalindices(edfh, channel)
     row1data = sigdata[row1, col1:endpos]
     row2data = sigdata[row2, startpos:col2]
     if row2 - row1 > 1
         otherdata = sigdata[(row1+1):(row2-1), startpos:endpos]
-        row2data = vcat(vec(otherdata), row2data)
+        row2data = vcat(vec(permutedims(otherdata)), row2data)
     end
     if physical
-        return collect(Base.Iterators.flatten((vcat(row1data, row2data) .* multiplier)))
+        return (vcat(row1data, row2data) .+ adder) .* multiplier
     else
-        return collect(Base.Iterators.flatten(vcat(row1data, row2data)))
+        return vcat(row1data, row2data)
     end
 end
 
@@ -452,7 +440,7 @@ Get a single digital channel of data in its entirety.
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
     data = signaldata(edfh)[:, span[1]:span[2]]
-    return vec(data)
+    return vec(permutedims(data))
 end
 
 """
@@ -469,9 +457,9 @@ function physicalchanneldata(edfh, channel)
     end
     digdata = digitalchanneldata(edfh, channel)
     if length(digdata) < 1
-        return digdata
+        return Float64[]
     end
-    return digdata * edfh.signalparam[channel].bitvalue
+    return (digdata .+ edfh.signalparam[channel].offset) .* edfh.signalparam[channel].bitvalue
 end
 
 """
