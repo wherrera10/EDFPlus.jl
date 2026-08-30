@@ -24,7 +24,7 @@ for (pgnum, page) in enumerate(eegpages)
     if pgnum == 1
         @test round(page[3][end], digits=3) == -24.121
     elseif pgnum == 30
-        @test round(page[1][100], digits=3) == -87.012
+        @test round(page[1][100], digits=3) == -20.899
     end
 end
 
@@ -48,7 +48,7 @@ bdfh = loadfile("samplefrombiosemicom.bdf")
 
 @test EDFPlus.version() == 0.60
 sig = physicalchanneldata(bdfh, 1)
-@test round(sig[100], digits=3) == -470.0
+@test round(sig[100], digits=3) == -484.984
 @test EDFPlus.recordindexat(bdfh, bdfh.file_duration - 0.3) == bdfh.datarecords
 
 true

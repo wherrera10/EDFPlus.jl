@@ -386,20 +386,21 @@ function channeltimesegment(edfh, channel, startsec, endsec, physical)
     row1, col1 = signalat(edfh, startsec, channel)
     row2, col2 = signalat(edfh, endsec, channel)
     multiplier = edfh.signalparam[channel].bitvalue
+    adder = edfh.signalparam[channel].offset
     if row1 == row2
-        return physical ? sigdata[row1, col1:col2] .* multiplier : sigdata[row1, col1:col2]
+        return physical ? (sigdata[row1, col1:col2] .+ adder) .* multiplier : sigdata[row1, col1:col2]
     end
     startpos, endpos = signalindices(edfh, channel)
     row1data = sigdata[row1, col1:endpos]
     row2data = sigdata[row2, startpos:col2]
     if row2 - row1 > 1
         otherdata = sigdata[(row1+1):(row2-1), startpos:endpos]
-        row2data = vcat(vec(otherdata), row2data)
+        row2data = vcat(vec(permutedims(otherdata)), row2data)
     end
     if physical
-        return collect(Base.Iterators.flatten((vcat(row1data, row2data) .* multiplier)))
+        return (vcat(row1data, row2data) .+ adder) .* multiplier
     else
-        return collect(Base.Iterators.flatten(vcat(row1data, row2data)))
+        return vcat(row1data, row2data)
     end
 end
 
@@ -439,7 +440,7 @@ Get a single digital channel of data in its entirety.
 function digitalchanneldata(edfh, channelnumber)
     span = signalindices(edfh, channelnumber)
     data = signaldata(edfh)[:, span[1]:span[2]]
-    return vec(data)
+    return vec(permutedims(data))
 end
 
 """
@@ -456,9 +457,9 @@ function physicalchanneldata(edfh, channel)
     end
     digdata = digitalchanneldata(edfh, channel)
     if length(digdata) < 1
-        return digdata
+        return Float64[]
     end
-    return digdata * edfh.signalparam[channel].bitvalue
+    return (digdata .+ edfh.signalparam[channel].offset) .* edfh.signalparam[channel].bitvalue
 end
 
 """
