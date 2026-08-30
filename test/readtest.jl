@@ -13,7 +13,7 @@ f1 = EDFPlus.recordslice(edfh, 21, 22)[1,:]
 f2 = highpassfilter(reshape(f1, length(f1)), fs)
 f3 = lowpassfilter(f2, fs)
 f4 = notchfilter(f3, fs)
-@test round(f4[end-3], digits=2) == 7258.63
+@test round(f4[end-3], digits=2) == 6803.28
 @test EDFPlus.recordindexat(edfh, edfh.file_duration - 0.05) == edfh.datarecords
 @test EDFPlus.epochmarkers(edfh, 10.525)[7] == (632, 10)
 
@@ -22,9 +22,9 @@ annots = annotation_epoch_iterator(edfh, 12)
 
 for (pgnum, page) in enumerate(eegpages)
     if pgnum == 1
-        @test round(page[3][end], digits=3) == 249.902
+        @test round(page[3][end], digits=3) == -24.121
     elseif pgnum == 30
-        @test round(page[1][100], digits=3) == -3050.391
+        @test round(page[1][100], digits=3) == -87.012
     end
 end
 
@@ -44,11 +44,11 @@ bdfh = loadfile("samplefrombiosemicom.bdf")
 @test trim(bdfh.signalparam[4].label) == "A4"
 @test bdfh.startdate_year == 2001
 @test bdfh.signalparam[end].physdimension == "Boolean"
-@test EDFPlus.recordslice(bdfh, 4, 14)[1,end-3] == 16711708
+@test EDFPlus.recordslice(bdfh, 4, 14)[1,end-3] == 1835263
 
-@test EDFPlus.version() == 0.59
+@test EDFPlus.version() == 0.60
 sig = physicalchanneldata(bdfh, 1)
-@test round(sig[100], digits=3) == 132655.977
+@test round(sig[100], digits=3) == -470.0
 @test EDFPlus.recordindexat(bdfh, bdfh.file_duration - 0.3) == bdfh.datarecords
 
 true
