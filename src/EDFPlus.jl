@@ -68,16 +68,6 @@ enum for type or state of file: type of data detected, whether any errors
 """
 @enum FileStatus EDF EDFPLUS BDF BDFPLUS READ_ERROR FORMAT_ERROR CLOSED
 
-"""
-    type Int24
-
-# 24-bit integer routines for BDF format signal data.
-BDF and BDF+ files use 24 bits per data signal point.
-The module caches these after reading as Int32 to fit LLVM CPU registers.
-"""
-primitive type Int24 24 end
-Int24(x::Int) = Core.Intrinsics.trunc_int(Int24, x)
-Base.Int(x::Int24) = Core.Intrinsics.zext_int(Int, x)
 function writei24(stream::IO, x)
     b1::UInt8 = x & 0xff
     b2::UInt8 = (x >> 8) & 0xff
