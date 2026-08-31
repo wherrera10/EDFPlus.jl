@@ -61,10 +61,9 @@ function test_digital_signal(edfh, pyreader, channel)
     pyn = py_signal_number(pyreader, sp.label)
     @test !isnothing(pyn)
     pyn === nothing && return #load failure
-
-    p = pyn - 1
+    
     julia_data = digitalchanneldata(edfh, channel)
-    python_data = Vector(pyreader.readSignal(p; digital=true))
+    python_data = Vector(pyreader.readSignal(pyn - 1; digital=true))
     @test length(julia_data) == length(python_data)
     if length(julia_data) == length(python_data)
         @test julia_data == python_data
@@ -120,7 +119,6 @@ function test_annotations(edfh, pyreader)
     for record_annotations in edfh.annotations
         for annotation in record_annotations
             duration_value = isempty(annotation.duration) ? 0.0 : parse(Float64, annotation.duration)
-
             for description in annotation.annotation
                 push!(julia_annotations, (annotation.onset, duration_value, description))
             end
@@ -149,14 +147,15 @@ end
     try
         @testset "File properties" begin
             @test edfh.datarecords == pyreader.datarecords_in_file
-            @test edfh.channelcount == pyreader.signals_in_file
+            # chennelcount includes annotation channel in EDFPlus but not in PyEDFlib
+            @test edfh.channelcount - 1 == pyreader.signals_in_file
             @test edfh.file_duration ≈ pyreader.getFileDuration()
-            @test edfh.startdate_day == pyreader.getStartdatetime().day
-            @test edfh.startdate_month == pyreader.getStartdatetime().month
-            @test edfh.startdate_year == pyreader.getStartdatetime().year
-            @test edfh.starttime_hour == pyreader.getStartdatetime().hour
-            @test edfh.starttime_minute == pyreader.getStartdatetime().minute
-            @test edfh.starttime_second == pyreader.getStartdatetime().second
+            @test edfh.startdate_day == day(pyreader.getStartdatetime())
+            @test edfh.startdate_month == month(pyreader.getStartdatetime())
+            @test edfh.startdate_year == year(pyreader.getStartdatetime())
+            @test edfh.starttime_hour == hour(pyreader.getStartdatetime())
+            @test edfh.starttime_minute == minute(pyreader.getStartdatetime())
+            @test edfh.starttime_second == second(pyreader.getStartdatetime())
         end
 
         @testset "Signal headers" begin
@@ -198,9 +197,9 @@ end
             @test edfh.datarecords == pyreader.datarecords_in_file
             @test edfh.channelcount == pyreader.signals_in_file
             @test edfh.file_duration ≈ pyreader.getFileDuration()
-            @test edfh.startdate_day == pyreader.getStartdatetime().day
-            @test edfh.startdate_month == pyreader.getStartdatetime().month
-            @test edfh.startdate_year == pyreader.getStartdatetime().year
+            @test edfh.startdate_day == day(pyreader.getStartdatetime())
+            @test edfh.startdate_month == month(pyreader.getStartdatetime())
+            @test edfh.startdate_year == year(pyreader.getStartdatetime())
         end
 
         @testset "Signal headers" begin
