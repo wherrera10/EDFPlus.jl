@@ -105,41 +105,48 @@ as three parallel arrays.
 
 EDFPlus stores annotations grouped by data record.
 """
+```julia
 function test_annotations(edfh, pyreader)
-
-    if edfh.annotationchannel == 0
+    if edfh.annotationchannel == 0 # no annotation channel?
         return
     end
 
-    onset, duration, description =
-        pyreader.readAnnotations()
-
+    onset, duration, description = pyreader.readAnnotations()
     python_annotations = [
-        (
-            Float64(onset[i]),
-            Float64(duration[i]),
-            String(description[i]),
-        )
+        (Float64(onset[i]), Float64(duration[i]), strip(String(description[i])))
         for i in eachindex(onset)
     ]
 
-    println()
-    println("========== Annotation diagnostic ==========")
-    println("PyEDFlib annotations: ", length(python_annotations))
-    println("EDFPlus annotations container:")
-    println("  type   = ", typeof(edfh.annotations))
-    println("  length = ", length(edfh.annotations))
+    # Annotation.annotation is a Vector{String}.  Empty strings are
+    # padding/unused annotation slots and must not be treated as
+    # separate annotations.
+    julia_annotations = Tuple[]
 
-    for i in 1:min(5, length(edfh.annotations))
-        println()
-        println("EDFPlus annotations[$i]")
-        println("  type = ", typeof(edfh.annotations[i]))
-        println("  value = ", edfh.annotations[i])
+    for record_annotations in edfh.annotations
+        for annotation in record_annotations
+            for description in annotation.annotation
+                # Ignore empty annotation strings.
+                if !isempty(strip(description))
+                    duration_value = isempty(annotation.duration) ? 0.0 : parse(Float64, annotation.duration)
+                    push!(julia_annotations, (Float64(annotation.onset), duration_value, strip(description)))
+                end
+            end
+        end
     end
 
-    println("===========================================")
-
-    @test length(python_annotations) > 0
+    # lengths of nonempty annotations
+    @test length(julia_annotations) == length(python_annotations)
+    if length(julia_annotations) == length(python_annotations)
+        for i in eachindex(julia_annotations)
+            jo, jd, js = julia_annotations[i]
+            po, pd, ps = python_annotations[i]
+            @testset "annotation $i" begin
+                @test jo ≈ po atol=1e-7
+                @test jd ≈ pd atol=1e-7
+                @test js == ps
+            end
+        end
+    end
 end
 
 # EDF tests
@@ -221,6 +228,14 @@ end
         @testset "Physical signal data" begin
             for channel in edfh.mapped_signals
                 test_physical_signal(edfh, pyreader, channel)
+            end
+        end
+        
+        @testset "Annotation record structure" begin
+            @test length(edfh.annotations) == edfh.datarecords
+            
+            for record in edfh.annotations
+                @test record isa Vector{Annotation}
             end
         end
 
