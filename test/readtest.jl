@@ -8,8 +8,8 @@ edfh = loadfile("EDFPlusTestFile.edf")
 @test edfh.annotationchannel == 30
 @test edfh.filetype == FileStatus(1)
 
-fs = samplerate(edfh,1)
-f1 = EDFPlus.recordslice(edfh, 21, 22)[1,:]
+fs = samplerate(edfh, 1)
+f1 = EDFPlus.recordslice(edfh, 21, 22)[1, :]
 f2 = highpassfilter(reshape(f1, length(f1)), fs)
 f3 = lowpassfilter(f2, fs)
 f4 = notchfilter(f3, fs)
@@ -17,7 +17,7 @@ f4 = notchfilter(f3, fs)
 @test EDFPlus.recordindexat(edfh, edfh.file_duration - 0.05) == edfh.datarecords
 @test EDFPlus.epochmarkers(edfh, 10.525)[7] == (632, 10)
 
-eegpages = epoch_iterator(edfh, 12, channels=[7,8,9])
+eegpages = epoch_iterator(edfh, 12, channels=[7, 8, 9])
 annots = annotation_epoch_iterator(edfh, 12)
 
 for (pgnum, page) in enumerate(eegpages)
@@ -34,6 +34,15 @@ for (i, ann) in enumerate(annots)
     end
 end
 
+annotationtups = annotationtuples(edfh)
+@test annotationtups isa Vector
+@test all(a -> a isa NamedTuple, annotationtups)
+@test all(a -> (:onset in keys(a)) &&
+               (:duration in keys(a)) &&
+               (:annotation in keys(a)), annotationtups)
+@test all(a -> !isempty(strip(a.annotation)), annotationtups)
+@test length(annotationtups) == 45
+
 closefile!(edfh)
 @test edfh.filetype == EDFPlus.CLOSED
 
@@ -44,7 +53,7 @@ bdfh = loadfile("samplefrombiosemicom.bdf")
 @test trim(bdfh.signalparam[4].label) == "A4"
 @test bdfh.startdate_year == 2001
 @test bdfh.signalparam[end].physdimension == "Boolean"
-@test EDFPlus.recordslice(bdfh, 4, 14)[1,end-3] == 1835263
+@test EDFPlus.recordslice(bdfh, 4, 14)[1, end-3] == 1835263
 
 @test EDFPlus.version() == 0.60
 sig = physicalchanneldata(bdfh, 1)
