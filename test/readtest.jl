@@ -39,8 +39,8 @@ annotationtups = annotationtuples(edfh)
 @test all(a -> a isa NamedTuple, annotationtups)
 @test all(a -> (:onset in keys(a)) &&
                (:duration in keys(a)) &&
-               (:annotation in keys(a)), annotationtups)
-@test all(a -> !isempty(strip(a.annotation)), annotationtups)
+               (:description in keys(a)), annotationtups)
+@test all(a -> !isempty(strip(a.description)), annotationtups)
 @test length(annotationtups) == 45
 
 closefile!(edfh)
