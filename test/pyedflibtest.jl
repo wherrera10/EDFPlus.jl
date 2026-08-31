@@ -217,9 +217,8 @@ end
                     py_description = strip(description[i])
                     @testset "annotation $i" begin
                         @test a.onset ≈ py_onset atol=1e-5
-                        # EDFPlus uses an empty duration "" to mean
-                        # "duration not specified" whereas PyEDFlib uses -1.
-                        if isempty(a.duration)
+                        # the annotationtuple will have nothing as duration if field was ""
+                        if isnothing(a.duration)
                             @test py_duration < 0.0
                         else
                             @test parse(Float64, a.duration) ≈ py_duration atol=1e-7
