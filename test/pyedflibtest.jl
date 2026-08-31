@@ -224,7 +224,7 @@ end
                         else
                             @test parse(Float64, a.duration) ≈ py_duration atol=1e-7
                         end
-                        @test strip(a.annotation) == py_description
+                        @test strip(a.description) == py_description
                     end
                 end
             end
