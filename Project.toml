@@ -13,6 +13,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+PyCall = "438e738f-606a-5e88-9575-32ed57c5c7f5"
 
 [compat]
 julia = "1"
@@ -20,4 +21,4 @@ DSP = "0.5, 0.6, 0.7, 0.8, 0.9, 1"
 IterTools = "1"
 
 [targets]
-test = ["Pkg", "Test", "Logging"]
+test = ["Pkg", "Test", "Logging", "PyCall"]
