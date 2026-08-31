@@ -11,7 +11,7 @@ end
 export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, version,
     loadfile, writefile!, closefile!, samplerate, addannotation!,
     epoch_iterator, annotation_epoch_iterator, readBiosemiStatus,
-    digitalchanneldata, physicalchanneldata,
+    digitalchanneldata, physicalchanneldata, annotationtuples,
     channeltimesegment, multichanneltimesegment,
     highpassfilter, lowpassfilter, notchfilter, trim
 
