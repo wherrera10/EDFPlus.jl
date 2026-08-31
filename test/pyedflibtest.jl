@@ -59,7 +59,7 @@ function test_digital_signal(edfh, pyreader, channel)
     pyn = py_signal_number(pyreader, sp.label)
     @test !isnothing(pyn)
     pyn === nothing && return #load failure
-    
+
     julia_data = digitalchanneldata(edfh, channel)
     python_data = Vector(pyreader.readSignal(pyn - 1; digital=true))
     @test length(julia_data) == length(python_data)
@@ -128,8 +128,8 @@ function test_annotations(edfh, pyreader)
                 # Ignore empty annotation descriptions.
                 if !isempty(description)
                     duration_value = isempty(annotation.duration) ?
-                        nothing :
-                        parse(Float64, annotation.duration)
+                                     nothing :
+                                     parse(Float64, annotation.duration)
                     push!(julia_annotations,
                         (Float64(annotation.onset), duration_value, description)
                     )
@@ -202,6 +202,34 @@ end
             test_annotations(edfh, pyreader)
         end
 
+        @testset "annotationtuples compared to PyEDFlib" begin
+            julia_annotations = annotationtuples(edfh)
+            onset, duration, description = pyreader.readAnnotations()
+            onset = Vector{Float64}(onset)
+            duration = Vector{Float64}(duration)
+            description = String.(description)
+            @test length(julia_annotations) == length(onset)
+            if length(julia_annotations) == length(onset)
+                for i in eachindex(julia_annotations)
+                    a = julia_annotations[i]
+                    py_onset = onset[i]
+                    py_duration = duration[i]
+                    py_description = strip(description[i])
+                    @testset "annotation $i" begin
+                        @test a.onset ≈ py_onset atol=1e-5
+                        # EDFPlus uses an empty duration "" to mean
+                        # "duration not specified" whereas PyEDFlib uses -1.
+                        if isempty(a.duration)
+                            @test py_duration < 0.0
+                        else
+                            @test parse(Float64, a.duration) ≈ py_duration atol=1e-7
+                        end
+                        @test strip(a.annotation) == py_description
+                    end
+                end
+            end
+        end
+
     finally
         closefile!(edfh)
         pyreader.close()
@@ -241,7 +269,7 @@ end
                 test_physical_signal(edfh, pyreader, channel)
             end
         end
-        
+
         @testset "Annotations" begin
             test_annotations(edfh, pyreader)
         end
@@ -253,4 +281,3 @@ end
 end
 
 true
-
