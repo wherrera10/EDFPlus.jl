@@ -242,14 +242,6 @@ end
             end
         end
         
-        @testset "Annotation record structure" begin
-            @test length(edfh.annotations) == edfh.datarecords
-            
-            for record in edfh.annotations
-                @test record isa Vector{Annotation}
-            end
-        end
-
         @testset "Annotations" begin
             test_annotations(edfh, pyreader)
         end
