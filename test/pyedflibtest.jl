@@ -251,3 +251,6 @@ end
         pyreader.close()
     end
 end
+
+true
+
