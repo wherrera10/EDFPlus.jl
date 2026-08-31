@@ -106,42 +106,54 @@ as three parallel arrays.
 EDFPlus stores annotations grouped by data record.
 """
 function test_annotations(edfh, pyreader)
-    if edfh.annotationchannel == 0 # no annotation channel?
-        return
-    end
+    edfh.annotationchannel == 0 && return # no annotations
 
     onset, duration, description = pyreader.readAnnotations()
+    onset = Vector{Float64}(onset)
+    duration = Vector{Float64}(duration)
+    description = String.(description)
     python_annotations = [
-        (Float64(onset[i]), Float64(duration[i]), strip(String(description[i])))
+        (onset[i], duration[i], strip(description[i]))
         for i in eachindex(onset)
     ]
 
     # Annotation.annotation is a Vector{String}.  Empty strings are
-    # padding/unused annotation slots and must not be treated as
-    # separate annotations.
+    # unused/padding entries and are ignored.
+    # An empty Annotation.duration means that no duration was specified.
     julia_annotations = Tuple[]
-
     for record_annotations in edfh.annotations
         for annotation in record_annotations
             for description in annotation.annotation
-                # Ignore empty annotation strings.
-                if !isempty(strip(description))
-                    duration_value = isempty(annotation.duration) ? 0.0 : parse(Float64, annotation.duration)
-                    push!(julia_annotations, (Float64(annotation.onset), duration_value, strip(description)))
+                description = strip(description)
+                # Ignore empty annotation descriptions.
+                if !isempty(description)
+                    duration_value = isempty(annotation.duration) ?
+                        nothing :
+                        parse(Float64, annotation.duration)
+                    push!(julia_annotations,
+                        (Float64(annotation.onset), duration_value, description)
+                    )
                 end
             end
         end
     end
 
-    # lengths of nonempty annotations
-    @test length(julia_annotations) == length(python_annotations)
-    if length(julia_annotations) == length(python_annotations)
+    # PyEDFlib uses -1.0 to indicate that no duration was specified, but EDFPlus.jl uses "".
+    # Explicit zero duration remains 0.0.
+    python_annotations_normalized = [
+        (onset, duration < 0.0 ? nothing : duration, description)
+        for (onset, duration, description) in python_annotations
+    ]
+    @test length(julia_annotations) == length(python_annotations_normalized)
+
+    if length(julia_annotations) == length(python_annotations_normalized)
         for i in eachindex(julia_annotations)
             jo, jd, js = julia_annotations[i]
-            po, pd, ps = python_annotations[i]
+            po, pd, ps = python_annotations_normalized[i]
             @testset "annotation $i" begin
-                @test jo ≈ po atol=1e-7
-                @test jd ≈ pd atol=1e-7
+                # Onset is a floating-point value.
+                @test jo ≈ po atol=1e-5
+                @test jd == pd
                 @test js == ps
             end
         end
