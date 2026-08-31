@@ -202,8 +202,6 @@ Arguments:
 <br /><br /><br />
 
 
-
-
     physicalchanneldata(edfh, channelnumber)
     
 Get a single data channel in its entirely, in the physical units stated in the header
@@ -212,8 +210,6 @@ Arguments:
 - edfh:          the BEDFPlus struct
 - channelnumber: the channel number in the records-- a channel in the mapped_signals list
 <br /><br /><br />
-
-
 
 
     samplerate(edfh, channel)
@@ -235,14 +231,10 @@ Apply high pass filter to signals, return filtered data
 <br /><br /><br />
 
 
-
-
     lowpassfilter(signals, fs, cutoff=25.0, order=4)
 
 Apply low pass filter to signals, return filtered data
 <br /><br /><br />
-
-
 
 
     closefile!(edfh)
@@ -299,13 +291,11 @@ in the signal channel matrix, returns that signal data point's 2D position as li
 <br /><br /><br />
 
 
-
     epochmarkers(edfh, secs)
 
 Get a set of (start, stop) positional markers for epochs (sequential windows)
 given an epoch duration in seconds
 <br /><br /><br />
-
 
 
     checkfile!(edfh)
@@ -314,12 +304,10 @@ Check an input file to be valid EDF/BDF/+ format.
 <br /><br /><br />
 
 
-
     readannotations!(edfh)
 
 Read the annotations of an input file into the EDFPlus struct.
 <br /><br /><br />
-
 
 
     translate24to16bits!(edfh)
@@ -332,7 +320,6 @@ Translate data in 24-bit BDF to 16-bit EDF format
 
 Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile!
 <br /><br /><br />
-
 
 
     addannotation!(edfh, onset, duration, description)
@@ -370,4 +357,5 @@ To install from a Julia REPL command line session:
     using Pkg
     Pkg.add("EDFPlus"))
 
-Note that the test files include a 23 mb test file. You may need to allow extra time for that to download when installing.
+Note that the test files include a 23 mb test file. You may need to allow extra time for that to download when installing. Optional extra testing of data handling requires PyCall: if this is 
+desired, see the test folder.
