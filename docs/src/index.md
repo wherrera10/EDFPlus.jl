@@ -153,6 +153,12 @@ Return an iterator for a group of annotations for a given epoch as in epoch_iter
 <br /><br /><br />
 
 
+    annotationtuples(edfh)
+
+Return all annotations as a vector of NamedTuple, with fields onset, duration, and description
+<br /><br /><br />
+
+
     dummyacquire(edfh)
 
 Dummy function for call in writefile! for optional acquire function
