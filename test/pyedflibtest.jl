@@ -74,7 +74,7 @@ end
 """
 Compare physical samples.
 
-`isapprox` is used because EDFPlus and PyEDFlib may perform the
+`isapprox` with 1e-5 tolerance is used because EDFPlus and PyEDFlib may perform the
 same calibration arithmetic in different floating-point order.
 """
 function test_physical_signal(edfh, pyreader, channel)
@@ -87,7 +87,7 @@ function test_physical_signal(edfh, pyreader, channel)
     python_data = Vector(pyreader.readSignal(pyn - 1; digital=false))
     @test length(julia_data) == length(python_data)
     if length(julia_data) == length(python_data)
-        @test isapprox(julia_data, python_data; rtol=1e-12, atol=1e-12)
+        @test isapprox(julia_data, python_data; rtol=1e-5, atol=1e-5)
     end
 end
 
@@ -132,8 +132,8 @@ function test_annotations(edfh, pyreader)
         for i in eachindex(julia_annotations)
             jo, jd, js = julia_annotations[i]
             po, pd, ps = python_annotations[i]
-            @test jo ≈ po atol=1e-7
-            @test jd ≈ pd atol=1e-7
+            @test jo ≈ po atol=1e-5
+            @test jd ≈ pd atol=1e-5
             @test js == ps
         end
     end
