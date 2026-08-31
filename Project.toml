@@ -20,4 +20,4 @@ DSP = "0.5, 0.6, 0.7, 0.8, 0.9, 1"
 IterTools = "1"
 
 [targets]
-test = ["Pkg", "Test"]
+test = ["Pkg", "Test", "Logging"]
