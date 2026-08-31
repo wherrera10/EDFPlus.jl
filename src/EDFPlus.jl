@@ -208,6 +208,7 @@ function loadfile(path::String, read_annotations=true)
     edfh.ios = fh
     checkfile!(edfh)
     if edfh.filetype == FORMAT_ERROR
+        close(fh)
         throw("Bad EDF/BDF file format at file $path")
     end
     edfh.writemode = false
@@ -270,8 +271,13 @@ function writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
             edfh.filetype = BDFPLUS
             boff = 0
             for chan in edfh.signalparam
-                chan.digmin = -8388608
-                chan.digmax = 8388607
+                if chan.annotation
+                    chan.digmin = -8388608
+                    chan.digmax = 8388607
+                else
+                    chan.digmin *= 256   # matches the range x << 8 can actually produce
+                    chan.digmax *= 256
+                end
                 chan.bufoffset = boff
                 boff += chan.smp_per_record * 3
             end
@@ -1010,7 +1016,6 @@ Helper function for writefile!
 function translate24to16bits!(edfh)
     data = edfh.BDFsignals
     sigcols = Int[]
-
     for ch in edfh.mapped_signals
         startc, endc = signalindices(edfh, ch)
         append!(sigcols, startc:endc)
@@ -1019,23 +1024,29 @@ function translate24to16bits!(edfh)
     if isempty(sigcols)
         mx = zero(eltype(data))
         mn = zero(eltype(data))
+        can_rshift = false
     else
-        mx = maximum(view(data, :, sigcols))
-        mn = minimum(view(data, :, sigcols))
+        sigview = view(data, :, sigcols)
+        mx = maximum(sigview)
+        mn = minimum(sigview)
+        can_rshift = all(x -> (x % 256 == 0), sigview) &&
+                     all(x -> -32768 <= (x >> 8) <= 32767, sigview)
     end
 
-    cvrtfactor = min(abs(32767 / max(mx, one(mx))), abs(-32768 / min(mn, -one(mn))))
-    if cvrtfactor < 1.0
-        edfh.EDFsignals = map(x -> Int16(floor(x * cvrtfactor)), data)
-
-        for chan in edfh.mapped_signals
-            edfh.signalparam[chan].physmin /= cvrtfactor
-            edfh.signalparam[chan].physmax /= cvrtfactor
-        end
-
+    if can_rshift
+        edfh.EDFsignals = map(x -> Int16(x >> 8), data)
     else
-        # clamp Int24 / Int32 values to fit in destination
-        edfh.EDFsignals = map(x -> Int16(x), clamp.(data, -32768, 32767))
+        cvrtfactor = min(abs(32767 / max(mx, one(mx))),
+            abs(-32768 / min(mn, -one(mn))))
+        if cvrtfactor < 1.0
+            edfh.EDFsignals = map(x -> Int16(floor(x * cvrtfactor)), data)
+            for chan in edfh.mapped_signals
+                edfh.signalparam[chan].physmin /= cvrtfactor
+                edfh.signalparam[chan].physmax /= cvrtfactor
+            end
+        else
+            edfh.EDFsignals = map(x -> Int16(x), clamp.(data, -32768, 32767))
+        end
     end
 
     achan = edfh.annotationchannel
@@ -1044,21 +1055,18 @@ function translate24to16bits!(edfh)
         return -1
     end
     startcol = Int(edfh.signalparam[achan].bufoffset / 3) + 1
-    endcol   = startcol + edfh.signalparam[achan].smp_per_record - 1
-
+    endcol = startcol + edfh.signalparam[achan].smp_per_record - 1
     for rec in 1:edfh.datarecords
         arr = UInt8[]
         oby = reinterpret(UInt8, edfh.BDFsignals[rec, startcol:endcol])
-
         for (i, cha) in enumerate(oby)
             if i % 4 != 0
                 push!(arr, cha)
             end
         end
-
         newspace = endcol - startcol + 1
         if length(arr) > 2*newspace
-            arr = arr[1:2*newspace]
+            arr = arr[1:(2*newspace)]
             arr[end] = 0x00
         else
             while length(arr) < 2*newspace
@@ -1067,7 +1075,6 @@ function translate24to16bits!(edfh)
         end
         edfh.EDFsignals[rec, startcol:endcol] .= reinterpret(Int16, arr)
     end
-
     return 0
 end
 
@@ -1077,7 +1084,8 @@ end
 Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile!
 """
 function translate16to24bits!(edfh)
-    edfh.BDFsignals = map(x->Int32(x), edfh.EDFsignals)
+    # Translate 16-bit EDF signals to 24-bit BDF signals with widening left shift
+    edfh.BDFsignals = map(x -> Int32(x) << 8, edfh.EDFsignals)
     chan = edfh.annotationchannel
     if chan == 0
         @warn("No annotation channel in source file")
