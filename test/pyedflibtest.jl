@@ -43,7 +43,7 @@ function test_signal_header(edfh, pyreader, channel)
     @test isapprox(sp.physmax, Float64(pyheader["physical_max"]), rtol=1e-5, atol=1e-5)
     @test sp.digmin == Int(pyheader["digital_min"])
     @test sp.digmax == Int(pyheader["digital_max"])
-    @test sp.smp_per_record == Int(pyheader["sample_frequency"] * edfh.datarecord_duration)
+    @test sp.smp_per_record == Int(round(pyheader["sample_frequency"] * edfh.datarecord_duration))
     @test strip(sp.prefilter) == strip(String(pyheader["prefilter"]))
     @test samplerate(edfh, channel) ≈ Float64(pyreader.getSampleFrequency(pyn - 1))
 end
