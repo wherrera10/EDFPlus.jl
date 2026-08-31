@@ -366,6 +366,36 @@ function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file
 end
 
 """
+    annotationtuples(edfh)
+
+Return all annotations in the EDF(+) or BDF(+) file as a list of named tuples with fields:
+- onset: onset time of the annotation
+- duration: duration of the annotation (or `nothing` if not specified)
+- description: description of the annotation
+""" 
+function annotationtuples(edfh)
+    allannotations = NamedTuple[]
+    for recordannotations in edfh.annotations
+        for annotation in recordannotations
+            for description in annotation.annotation
+                description = strip(description)
+                # Ignore empty annotation descriptions, since they are filler.
+                isempty(description) && continue
+                duration_value = isempty(annotation.duration) ?
+                                 nothing : # empty duration means not specified
+                                 parse(Float64, annotation.duration)
+                push!(allannotations,
+                    (onset = Float64(annotation.onset), 
+                    duration = duration_value, 
+                    description = description)
+                )
+            end
+        end
+    end
+    return allannotations
+end
+
+"""
     dummyacquire(edfh)
 
 Dummy function for call in writefile! for optional acquire function
