@@ -105,7 +105,6 @@ as three parallel arrays.
 
 EDFPlus stores annotations grouped by data record.
 """
-```julia
 function test_annotations(edfh, pyreader)
     if edfh.annotationchannel == 0 # no annotation channel?
         return
