@@ -24,4 +24,4 @@ if get(ENV, "EDFPLUS_PYEDFLIB_TEST", "0") == "1"
     @test include("pyedflibtest.jl")
 end
 
-
+true
