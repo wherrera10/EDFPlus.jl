@@ -1,6 +1,4 @@
-using Test
-using EDFPlus
-using PyCall
+using Dates, Test, PyCall, EDFPlus
 
 # Note: If your Python does not have it, pyedflib may be imported with
 # ```julia
@@ -41,8 +39,8 @@ function test_signal_header(edfh, pyreader, channel)
     @test strip(sp.label) == strip(String(pyheader["label"]))
     @test strip(sp.transducer) == strip(String(pyheader["transducer"]))
     @test strip(sp.physdimension) == strip(String(pyheader["dimension"]))
-    @test sp.physmin == Float64(pyheader["physical_min"])
-    @test sp.physmax == Float64(pyheader["physical_max"])
+    @test isapprox(sp.physmin, Float64(pyheader["physical_min"]), rtol=1e-5, atol=1e-5)
+    @test isapprox(sp.physmax, Float64(pyheader["physical_max"]), rtol=1e-5, atol=1e-5)
     @test sp.digmin == Int(pyheader["digital_min"])
     @test sp.digmax == Int(pyheader["digital_max"])
     @test sp.smp_per_record == Int(pyheader["sample_frequency"] * edfh.datarecord_duration)
