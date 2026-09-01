@@ -344,7 +344,7 @@ Make an iterator for EEG epochs of a given duration between start and stop times
 function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
     startsec=0, endsec=edfh.file_duration, physical=true)
     epochs = collect(startsec:epochsecs:endsec)[1:(end-1)]
-    epochwidth = epochs[2] - epochs[1]
+    epochwidth = length(epochs) > 1 ? epochs[2] - epochs[1] : epochsecs # minumum if interval small
     return imap(x -> multichanneltimesegment(edfh, channels, x, x+epochwidth, physical), epochs)
 end
 
