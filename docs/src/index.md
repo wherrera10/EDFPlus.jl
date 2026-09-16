@@ -111,7 +111,7 @@ enum for type or state of file: type of data detected, whether any errors
 ## Installation
 ```julia
 
-# can be install as usual with ]add EDFPlus at REPL command line, or with Pkg:
+# can be installed as usual with ]add EDFPlus at REPL command line, or with Pkg:
 
 using Pkg
 Pkg.add("EDFPlus")
