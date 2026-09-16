@@ -1,6 +1,6 @@
-  
 [deps]
+EDFPlus = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 
 [compat]
-Documenter = "0.24"
+Documenter = "1"
