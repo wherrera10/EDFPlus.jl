@@ -1,8 +1,7 @@
 module EDFPlus
 using DSP
 using Dates
-using IterTools
-using Core.Intrinsics
+
 
 if VERSION < v"0.7.0"
     @warn("This version of EDFPlus requires Julia 0.7 or above.")
@@ -85,12 +84,12 @@ end
 
 """ Drop the unused high padding byte of each in-memory Int32 holding a 24-bit BDF sample """
 function stripbdfpadding(ints)
-    oby = reinterpret(UInt8, ints)
     arr = UInt8[]
-    for (i, cha) in enumerate(oby)
-        if i % 4 != 0
-            push!(arr, cha)
-        end
+    for x in ints
+        # explicit little-endian byte extraction
+        push!(arr, UInt8(x & 0xff))
+        push!(arr, UInt8((x >> 8) & 0xff))
+        push!(arr, UInt8((x >> 16) & 0xff))
     end
     arr
 end
@@ -345,7 +344,7 @@ function epoch_iterator(edfh, epochsecs; channels=edfh.mapped_signals,
     startsec=0, endsec=edfh.file_duration, physical=true)
     epochs = collect(startsec:epochsecs:endsec)[1:(end-1)]
     epochwidth = length(epochs) > 1 ? epochs[2] - epochs[1] : epochsecs # minumum if interval small
-    return imap(x -> multichanneltimesegment(edfh, channels, x, x+epochwidth, physical), epochs)
+    return (multichanneltimesegment(edfh, channels, x, x+epochwidth, physical) for x in epochs)
 end
 
 """
@@ -362,7 +361,7 @@ function annotation_epoch_iterator(edfh, epochsecs; startsec=0, endsec=edfh.file
         markers = map(t->signalat(edfh, t, achan), epochs)
     end
     epochwidth = markers[2][1] - markers[1][1]
-    return imap(x -> edfh.annotations[x[1]:(x[1]+epochwidth)], markers[1:(end-1)])
+    return (edfh.annotations[x[1]:(x[1]+epochwidth)] for x in markers[1:(end-1)])
 end
 
 """
@@ -1087,13 +1086,8 @@ function translate24to16bits!(edfh)
     startcol = Int(edfh.signalparam[achan].bufoffset / 3) + 1
     endcol = startcol + edfh.signalparam[achan].smp_per_record - 1
     for rec in 1:edfh.datarecords
-        arr = UInt8[]
-        oby = reinterpret(UInt8, edfh.BDFsignals[rec, startcol:endcol])
-        for (i, cha) in enumerate(oby)
-            if i % 4 != 0
-                push!(arr, cha)
-            end
-        end
+        # explicit little-endian byte extraction is correct regardless of host endianness
+        arr = stripbdfpadding(edfh.BDFsignals[rec, startcol:endcol])
         newspace = endcol - startcol + 1
         if length(arr) > 2*newspace
             arr = arr[1:(2*newspace)]
@@ -1103,7 +1097,13 @@ function translate24to16bits!(edfh)
                 push!(arr, 0x00)
             end
         end
-        edfh.EDFsignals[rec, startcol:endcol] .= reinterpret(Int16, arr)
+        # recombine byte pairs into Int16 explicitly (little-endian: low byte first)
+        vals = Int16[]
+        for k in 1:2:(length(arr)-1)
+            u16 = UInt16(arr[k]) | (UInt16(arr[k+1]) << 8)
+            push!(vals, reinterpret(Int16, u16))
+        end
+        edfh.EDFsignals[rec, startcol:endcol] .= vals
     end
     return 0
 end
@@ -1111,10 +1111,9 @@ end
 """
     translate16to24bits!(edfh)
 
-Translate 16 bit data to 32-bit width, for change to 24-bit data for writefile!
+    Translate 16-bit EDF signals to 24-bit BDF signals with widening left shift
 """
 function translate16to24bits!(edfh)
-    # Translate 16-bit EDF signals to 24-bit BDF signals with widening left shift
     edfh.BDFsignals = map(x -> Int32(x) << 8, edfh.EDFsignals)
     chan = edfh.annotationchannel
     if chan == 0
@@ -1125,9 +1124,17 @@ function translate16to24bits!(edfh)
     endcol = startcol + edfh.signalparam[chan].smp_per_record - 1
     for rec in 1:edfh.datarecords
         arr::Array{Int32,1} = []
-        oby = vec(reinterpret(UInt8, edfh.EDFsignals[rec, startcol:endcol]))
-        for k in 1:3:(length(oby)-1)
-            push!(arr, reinterpret(Int32, [oby[k], oby[k+1], oby[k+2], UInt8(0)])[1])
+        # explicit little-endian byte extraction from each Int16 sample
+        oby = UInt8[]
+        for x in edfh.EDFsignals[rec, startcol:endcol]
+            u16 = reinterpret(UInt16, x)   # scalar bit-pattern reinterpret: endian-safe
+            push!(oby, UInt8(u16 & 0xff))
+            push!(oby, UInt8((u16 >> 8) & 0xff))
+        end
+        for k in 1:3:(length(oby)-2)
+            # explicit little-endian composition of 3 bytes into a signed 32-bit value
+            u32 = UInt32(oby[k]) | (UInt32(oby[k+1]) << 8) | (UInt32(oby[k+2]) << 16)
+            push!(arr, reinterpret(Int32, u32))
         end
         while length(arr) < endcol - startcol + 1
             push!(arr, 0)
