@@ -6,7 +6,7 @@ makedocs(;
     modules=[EDFPlus],
     authors="William Herrera and various patch submitters",
     sitename="EDFPlus.jl Documentation",
-    repo="https://github.com/wherrera10/EDFPlus.jl/blob/{commit}{path}#{line}",
+    repo=Documenter.Remotes.GitHub("wherrera10", "EDFPlus.jl"),
     format=Documenter.HTML(;
         canonical="https://wherrera10.github.io/EDFPlus.jl",
         edit_link="master",
