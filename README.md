@@ -20,5 +20,5 @@ To install from a Julia REPL command line session you may use ]add EDFPlus at th
     using Pkg
     Pkg.add("EDFPlus"))
 
-Note that the test files that are downloaded by default include a 23 mb test file. Optional extra testing with Pkg.test incudes data value testing that requires PyCall: if this is desired, see the test folder.
+Note that the test files that are downloaded by default include a 23 mb test file. Optional extra testing with Pkg.test includes data value testing that requires PyCall. If this is desired, see the test folder runtests.jl file for how to run cross-checking with pyedflib.
 
