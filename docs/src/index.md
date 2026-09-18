@@ -1,6 +1,6 @@
 # EDFPlus.jl
 
-<img src="https://github.com/wherrera10/EDFPlus.jl/blob/master/docs/src/eeg.png">
+![Description](assets/eeg.png)
 
 Julia for handling BDF+ and EDF+ EEG and similar signal data files.
 
