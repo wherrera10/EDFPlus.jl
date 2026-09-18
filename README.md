@@ -1,6 +1,6 @@
 # EDFPlus.jl
 
-<img src="https://github.com/wherrera10/EDFPlus.jl/blob/master/docs/src/eeg.png">
+<img src="https://github.com/wherrera10/EDFPlus.jl/blob/master/docs/src/assets/eeg.png">
 
 [![Build status](https://ci.appveyor.com/api/projects/status/cfw6pe03rfn9qsoo?svg=true)](https://ci.appveyor.com/project/wherrera10/edfplus.jl)
 [![CI](https://github.com/wherrera10/EDFPlus.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/wherrera10/EDFPlus.jl/actions/workflows/ci.yml)
