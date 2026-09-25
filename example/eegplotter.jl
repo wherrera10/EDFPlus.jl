@@ -299,19 +299,6 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
     return fig
 end
 
-function get_sample_eeg()
-    dir = @get_scratch!("eeg_samples")
-    path = joinpath(dir, "eeg-sample-ma.edf")
-    if !isfile(path)
-        @info "Downloading sample EEG (27 MB, one-time)..."
-        Downloads.download(
-            "https://github.com/youruser/yourrepo/releases/download/v0.4.3/eeg-sample-ma.edf",
-            path,
-        )
-    end
-    return path
-end
-
 """ If run from /example directory: one-time download of 27 MB demo human EEG file """
 function getsampleeeg()
     dir = @get_scratch!("eeg_samples")
@@ -319,7 +306,7 @@ function getsampleeeg()
     if !isfile(path)
         @info "Downloading sample EEG (27 MB, one-time)..."
         Downloads.download(
-            "https://github.com/wherrera10/EDFPlus/releases/download/v0.4.3/eeg-sample-ma.edf",
+            "https://github.com/wherrera10/EDFPlus/releases/download/v0.2.3/eeg-sample-ma.edf",
             path,
         )
     end
@@ -329,7 +316,7 @@ end
 filename = if !isempty(ARGS)
     ARGS[1]
 elseif abspath(PROGRAM_FILE) == @__FILE__
-    get_sample_eeg()
+    getsampleeeg()
 else
     @info "usage: julia eegplotter.jl <filename>\nNo filename provided."
     println("Enter the filename or just press return to exit the program.")
