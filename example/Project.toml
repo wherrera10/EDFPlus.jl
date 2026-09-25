@@ -1,0 +1,12 @@
+[deps]
+DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+EDFPlus = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+Scratch = "6c6a2e73-6563-6170-7368-637461726353"
+
+[compat]
+EDFPlus = "0.2 0.3"
+GLMakie = "0.13 0.14"
+DSP = "0.7 0.8 0.9"
+Scratch = "1"
