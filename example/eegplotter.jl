@@ -120,10 +120,9 @@ function averagereference(edfh, channels)
     data = EDFPlus.signaldata(edfh)
     n_records = size(data, 1)
     rec_len = maximum(p -> p.smp_per_record, edfh.signalparam)
-    spans = [EDFPlus.signalindices(edfh, c) for c in channels]
     avg = zeros(rec_len * n_records)
 
-    for r = 1:n_records, span in spans
+    for r = 1:n_records, span in map(c -> EDFPlus.signalindices(edfh, c), channels)
         chunk = data[r, span[1]:span[2]]
         avg[(r-1)*rec_len .+ (1:length(chunk))] .+= chunk ./ length(channels)
     end
