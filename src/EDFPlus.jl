@@ -1,3 +1,10 @@
+"""
+EDFPlus.jl
+Author: William Herrera and various PR by others, written originally as a port of EDFlib C code by Teunis van Beelen
+Copyright: (Julia code) 2015, 2016, 2017, 2018, 2026 William Herrera
+Created: 6 December 2015
+Purpose: EEG file routines for EDF, BDF, EDF+, and BDF+ files
+"""
 module EDFPlus
 using DSP
 using Dates
