@@ -31,7 +31,8 @@ function signalchannels(edfh; max_channels = 8)
         # EDF+ annotation channels normally have "ANNOTATION" in their
         # signal label.  Check several common forms so that annotation
         # channels are not displayed as EEG signals.
-        is_annotation = occursin("ANNOTATION", label) ||
+        is_annotation =
+            occursin("ANNOTATION", label) ||
             occursin("EDF ANNOT", label) ||
             label == "ANNOT" ||
             label == "EDFANNOT"
@@ -46,7 +47,7 @@ function signalchannels(edfh; max_channels = 8)
     # "Temperature" sampled once per second) are typically status
     # channels rather than EEG signals.
     rates = [edfh.signalparam[c].smp_per_record for c in candidates]
-    rate_counts = Dict{Int, Int}()
+    rate_counts = Dict{Int,Int}()
 
     for r in rates
         rate_counts[r] = get(rate_counts, r, 0) + 1
@@ -82,7 +83,7 @@ function filteredpages(edfh; channels, seconds_per_page = 15.0)
     n_pages > 0 || error("The EDF file does not contain a complete page of data.")
     pages = Vector{Vector{Vector{Float64}}}(undef, n_pages)
 
-    for p in 1:n_pages
+    for p = 1:n_pages
         t1 = (p - 1) * seconds_per_page
         t2 = t1 + seconds_per_page
         segment = multichanneltimesegment(edfh, channels, t1, t2, true)
@@ -93,7 +94,7 @@ function filteredpages(edfh; channels, seconds_per_page = 15.0)
     # rounding in multichanneltimesegment can give adjacent pages counts that
     # differ by one sample, but plotting requires x and y to have the same length.
     target_len = round(Int, seconds_per_page * fs)
-    for p in 1:n_pages, c in eachindex(pages[p])
+    for p = 1:n_pages, c in eachindex(pages[p])
         len = length(pages[p][c])
         if len > target_len
             pages[p][c] = pages[p][c][1:target_len]
@@ -122,9 +123,9 @@ function averagereference(edfh, channels)
     spans = [EDFPlus.signalindices(edfh, c) for c in channels]
     avg = zeros(rec_len * n_records)
 
-    for r in 1:n_records, span in spans
+    for r = 1:n_records, span in spans
         chunk = data[r, span[1]:span[2]]
-        avg[(r - 1) * rec_len .+ (1:length(chunk))] .+= chunk ./ length(channels)
+        avg[(r-1)*rec_len .+ (1:length(chunk))] .+= chunk ./ length(channels)
     end
 
     return avg
@@ -150,20 +151,24 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
     edfh = loadfile(filename)
 
     # Automatically discover the signal channels in the EDF file.
-    # Annotation channels are excluded and no more than eight channels
-    # are displayed.
+    # Annotation channels are excluded and no more than max_channels are displayed.
     channels = signalchannels(edfh; max_channels = max_channels)
     isempty(channels) && error("The EDF file contains no displayable signal channels.")
 
-    pages, timepoints, labels = filteredpages(
-        edfh;
-        channels = channels,
-        seconds_per_page = seconds_per_page,
-    )
+    pages, timepoints, labels =
+        filteredpages(edfh; channels = channels, seconds_per_page = seconds_per_page)
     n_pages = length(pages)
     n_channels = length(channels)
     fs = samplerate(edfh, first(channels))
-    total_duration = edfh.file_duration
+
+    """ 
+    Physical unit for each displayed channel (e.g. "uV"), as recorded in the EDF header
+    """
+    function physunit(s)
+        u = trim(edfh.signalparam[s].physdimension)
+        isempty(u) || u == "uV" ? "µV" : u # change common label "uV" to display "µV"
+    end
+    units = [physunit(c) for c in channels]
 
     # --- spectrogram (down-sampled so it fits in a GPU texture) ---
     avg = averagereference(edfh, channels)
@@ -186,7 +191,7 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
     page_title = @lift "$fname — Page $($page_no) of $n_pages"
 
     # Keep one Observable for each channel
-    channel_data = [Observable(copy(pages[1][c])) for c in 1:n_channels]
+    channel_data = [Observable(copy(pages[1][c])) for c = 1:n_channels]
 
     # Real extent of the spectrogram's time axis
     spec_t0, spec_t1 = t_ds[1], t_ds[end]
@@ -197,7 +202,7 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
 
     # Whenever the page number changes, replace each channel's Observable.
     on(page_no) do p
-        for c in 1:n_channels
+        for c = 1:n_channels
             channel_data[c][] = pages[p][c]
         end
     end
@@ -217,7 +222,7 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
     # Channel axes start at row 2
     for (c, label) in enumerate(labels)
         ax = Axis(
-            fig[c + 1, 1];
+            fig[c+1, 1];
             ylabel = label,
             yticksvisible = false,
             yticklabelsvisible = false,
@@ -226,18 +231,25 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
         lines!(ax, timepoints, channel_data[c])
         hidexdecorations!(ax; grid = false)
         push!(channel_axes, ax)
-    end
 
+        # Right-hand scale showing the channel's physical unit
+        ax_uv = Axis(fig[c+1, 1]; ylabel = units[c], yaxisposition = :right)
+        hidespines!(ax_uv)
+        hidexdecorations!(ax_uv; grid = false)
+        ax_uv.xgridvisible = false
+        ax_uv.ygridvisible = false
+        ax_uv.backgroundcolor = :transparent
+        linkxaxes!(ax, ax_uv)
+        linkyaxes!(ax, ax_uv)
+        deregister_interaction!(ax_uv, :rectanglezoom)
+    end
     linkxaxes!(channel_axes...)
     hidexdecorations!(channel_axes[end]; grid = false, ticks = false, ticklabels = false)
     channel_axes[end].xlabel = "Time (s)"
 
     # Spectrogram spanning the whole recording  (row = n_channels + 2)
-    spec_ax = Axis(
-        fig[n_channels + 2, 1];
-        ylabel = "Hz",
-        xlabel = "Time (s, whole recording)",
-    )
+    spec_ax =
+        Axis(fig[n_channels+2, 1]; ylabel = "Hz", xlabel = "Time (s, whole recording)")
     heatmap!(spec_ax, t_ds, spec.freq, p_ds; colormap = :viridis)
 
     # Vertical span white line marking the currently displayed page
@@ -281,7 +293,9 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
 
     # Click (or double-click) on spectrogram → jump to that time
     on(events(fig).mousebutton) do event
-        if event.button == Mouse.left && event.action == Mouse.press && is_mouseinside(spec_ax)
+        if event.button == Mouse.left &&
+           event.action == Mouse.press &&
+           is_mouseinside(spec_ax)
             mp = mouseposition(spec_ax)
             t = mp[1]
             t0, t1 = t_ds[1], t_ds[end]
