@@ -21,4 +21,5 @@ makedocs(;
 deploydocs(;
     repo="github.com/wherrera10/EDFPlus.jl.git",
     devbranch="master",
+    forcepush=true,
 )
