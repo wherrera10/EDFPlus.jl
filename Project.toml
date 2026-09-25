@@ -1,7 +1,7 @@
 authors = ["William Herrera <wherrera@alahonua.com>"]
 name = "EDFPlus"
 uuid = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
-version = "0.2.2"
+version = "0.2.3"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -15,7 +15,7 @@ Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
 
 [compat]
-julia = "1"
+julia = "1.10"
 DSP = "0.5, 0.6, 0.7, 0.8, 0.9, 1"
 
 [targets]
