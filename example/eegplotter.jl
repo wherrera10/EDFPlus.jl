@@ -1,11 +1,11 @@
-#=
-[eegplotter.jl]
+"""
+eegplotter.jl
 Version =  0.2.3
 Author = "William Herrera"
 Copyright = "Copyright 2018, 2026 William Herrera"
 Created = "12 Jan 2018"
 Purpose = "EEG file routines viewer example"
-=#
+""
 
 using EDFPlus, DSP, GLMakie, Downloads, Scratch
 
