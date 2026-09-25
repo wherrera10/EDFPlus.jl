@@ -207,9 +207,9 @@ function vieweeg(filename; seconds_per_page = 15.0, max_channels = 8)
     # Title + navigation buttons row
     top = GridLayout(fig[1, 1])
     Label(top[1, 1], page_title, fontsize = 18, tellwidth = false)
-    btn_prev = Button(top[1, 2], label = "« Prev (PgUp)", width = 140)
-    btn_next = Button(top[1, 3], label = "Next (PgDn) »", width = 140)
-    colsize!(top, 1, Relative(1.0))
+    btn_prev = Button(top[1, 2], label = "« Prev (PgUp)", width = 100)
+    btn_next = Button(top[1, 3], label = "Next (PgDn) »", width = 100)
+    colsize!(top, 1, Auto())
 
     channel_axes = Axis[]
 
