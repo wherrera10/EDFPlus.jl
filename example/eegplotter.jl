@@ -319,7 +319,7 @@ function getsampleeeg()
     if !isfile(path)
         @info "Downloading sample EEG (27 MB, one-time)..."
         Downloads.download(
-            "https://github.com/youruser/yourrepo/releases/download/v0.4.3/eeg-sample-ma.edf",
+            "https://github.com/wherrera10/EDFPlus/releases/download/v0.4.3/eeg-sample-ma.edf",
             path,
         )
     end
