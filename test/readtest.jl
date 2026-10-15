@@ -61,3 +61,4 @@ sig = physicalchanneldata(bdfh, 1)
 @test EDFPlus.recordindexat(bdfh, bdfh.file_duration - 0.3) == bdfh.datarecords
 
 true
+
