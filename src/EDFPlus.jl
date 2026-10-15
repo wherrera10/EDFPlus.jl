@@ -1443,7 +1443,7 @@ Note the description arg is a text string, not an array argument here
 """
 function addannotation!(edfh, onset, duration, description)
     if isempty(edfh.annotations) && edfh.annotationchannel == 0
-        throw(BEDFFormatError("No annotation channels in file"))
+        throw(DomainError("No annotation channels in file"))
     end
     if typeof(duration) != String
         duration = "$duration"
