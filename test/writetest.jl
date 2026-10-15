@@ -64,7 +64,7 @@ statusdict = EDFPlus.readBiosemiStatus(copyedfh)
       length(statusdict["Onset"]) == length(statusdict["Duration"])
 
 # physicalchanneldata should refuse to operate on the annotation channel
-@test_throws String physicalchanneldata(copyedfh, copyedfh.annotationchannel)
+@test_throws BEDFFormatError physicalchanneldata(copyedfh, copyedfh.annotationchannel)
 
 # plain EDF round-trip
 newedfh = writefile!(copyedfh, "NEWedfplustestfile.edf")
@@ -112,7 +112,7 @@ origbdfrate = samplerate(bdfh, 1)
 @test round(origbdfphysical[100], digits=3) == -484.984 # pyedflib readSignal(0)[99]
 
 # a plain BDF file has no annotation channel, so adding one should throw
-@test_throws String addannotation!(bdfh, 1.0, "0", "should fail, no annotation channel")
+@test_throws BEDFFormatError addannotation!(bdfh, 1.0, "0", "should fail, no annotation channel")
 
 bdfh.signalparam[1].label = "TestLabel"
 copyedbdfh = deepcopy(bdfh)
@@ -153,7 +153,7 @@ open(badpath, "w") do io
     write(io, "not a real edf or bdf header at all, just garbage bytes"^5)
 end
 with_logger(NullLogger()) do # this keeps the warning the checker prints from showing here
-    @test_throws String loadfile(badpath)
+    @test_throws BEDFFormatError loadfile(badpath)
 end
 rm(badpath, force=true)
 
