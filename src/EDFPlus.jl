@@ -14,7 +14,7 @@ if VERSION < v"0.7.0"
     @warn("This version of EDFPlus requires Julia 0.7 or above.")
 end
 
-export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, EDFFormatError, version,
+export ChannelParam, BEDFPlus, Annotation, DataFormat, FileStatus, BEDFFormatError, version,
     loadfile, writefile!, closefile!, samplerate, addannotation!,
     epoch_iterator, annotation_epoch_iterator, readBiosemiStatus,
     digitalchanneldata, physicalchanneldata, annotationtuples,
@@ -63,18 +63,18 @@ const MAX_CHANNELS = 512
 const MAX_ANNOTATION_LENGTH = 512
 
 """
-    EDFFormatError <: Exception
+    BEDFFormatError(msg)
 
 Exception type thrown by [`checkfile!`](@ref) when an EDF/BDF file handle's
 header or structure contains invalid, inconsistent, or otherwise unreadable
 contents. `msg` holds a description of the specific problem found.
 """
-struct EDFFormatError <: Exception
+struct BEDFFormatError <: Exception
     msg::String
 end
 
-Base.show(io::IO, e::EDFFormatError) = print(io, e.msg)
-Base.showerror(io::IO, e::EDFFormatError) = print(io, "EDFFormatError: ", e.msg)
+Base.show(io::IO, e::BEDFFormatError) = print(io, e.msg)
+Base.showerror(io::IO, e::BEDFFormatError) = print(io, "BEDFFormatError: ", e.msg)
 
 """
     DataFormat
@@ -229,7 +229,7 @@ function loadfile(path::String, read_annotations=true)
     checkfile!(edfh)
     if edfh.filetype == FORMAT_ERROR
         close(fh)
-        throw("Bad EDF/BDF file format at file $path")
+        throw(BEDFFormatError("Bad EDF/BDF file format at file $path"))
     end
     edfh.writemode = false
     if edfh.edf
@@ -245,7 +245,7 @@ function loadfile(path::String, read_annotations=true)
         edfh.filetype = BDFPLUS
     end
     edfh.file_duration = edfh.datarecord_duration * edfh.datarecords
-    if edfh.edfplus == false && edfh.bdfplus == false
+    if !edfh.edfplus && !edfh.bdfplus
         edfh.patientcode = ""
         edfh.gender = ""
         edfh.birthdate = ""
@@ -343,7 +343,7 @@ function writefile!(edfh, newpath; acquire=dummyacquire, sigformat=same)
         writefile!(edfh, newpath, acquire=acquire, sigformat=bdfplus)
         return edfh
     else
-        throw("Unknown signal file write format request: $sigformat")
+        throw(BEDFFormatError("Unknown signal file write format request: $sigformat"))
     end
 end
 
@@ -397,8 +397,8 @@ function annotationtuples(edfh)
     allannotations = NamedTuple[]
     for recordannotations in edfh.annotations
         for annotation in recordannotations
-            for description in annotation.annotation
-                description = strip(description)
+            for rawdescription in annotation.annotation
+                description = strip(rawdescription)
                 # Ignore empty annotation descriptions, since they are filler.
                 isempty(description) && continue
                 duration_value = isempty(annotation.duration) ?
@@ -509,7 +509,7 @@ Get a single data channel in its entirely, in the physical units stated in the h
 """
 function physicalchanneldata(edfh, channel)
     if !(channel in edfh.mapped_signals)
-        throw("physicalchanneldata($channel) is not a signal channel")
+        throw(BEDFFormatError("physicalchanneldata($channel) is not a signal channel"))
     end
     digdata = digitalchanneldata(edfh, channel)
     if length(digdata) < 1
@@ -676,7 +676,7 @@ function signalat(edfh, secondsafter, channel=edfh.mapped_signals[1])
     seconddiff = round(secondsafter - edfh.datarecord_duration * (row-1), digits=4)
     seconddif = seconddiff < 0.0 ? 0.0 : seconddiff
     startpos, endpos = signalindices(edfh, channel)
-    col = startpos + Int(floor(seconddiff / datapointinterval(edfh, channel)))
+    col = startpos + Int(floor(seconddif / datapointinterval(edfh, channel)))
     return (row, col > endpos ? endpos : col)
 end
 
@@ -699,7 +699,7 @@ Helper function for loadfile and writefile!
 function checkfile!(edfh)
     function throwifhasforbiddenchars(bytes)
         if something(findfirst(c -> (Int(c) < 32) || (Int(c) > 126), bytes), 0) > 0
-            throw(EDFFormatError("Control type forbidden chars in header"))
+            throw(BEDFFormatError("Control type forbidden chars in header"))
         end
     end
     seekstart(edfh.ios)
@@ -716,7 +716,7 @@ function checkfile!(edfh)
             edfh.version = ""
             edfh.filetype = EDF
         else
-            throw(EDFFormatError("identification code error"))
+            throw(BEDFFormatError("identification code error"))
         end
         throwifhasforbiddenchars(hdrbuf[9:88])
         edfh.patient = String(trim(hdrbuf[9:88]))      # patient
@@ -795,11 +795,11 @@ function checkfile!(edfh)
         throwifhasforbiddenchars(hdrbuf[253:256])
         edfh.channelcount = parse(Int16, trim(hdrbuf[253:256])) # number of data signals or records (channels) in file
         if edfh.channelcount < 0
-            throw(EDFFormatError("bad channel count"))
+            throw(BEDFFormatError("bad channel count"))
         end
         calcheadersize = (edfh.channelcount + 1) * 256
         if calcheadersize != headersize
-            throw(EDFFormatError("Bad header size: in file as $headersize, calculates to be $calcheadersize"))
+            throw(BEDFFormatError("Bad header size: in file as $headersize, calculates to be $calcheadersize"))
         end
 
     catch y
@@ -832,7 +832,7 @@ function checkfile!(edfh)
             throwifhasforbiddenchars(transducertype)
             pblock.transducer = transducertype # transducer type eg "active electrode"
             if pblock.annotation && something(findfirst(c->!isspace(c), transducertype), 0) > 0
-                throw(EDFFormatError("Transducer field should be blank in annotation channels"))
+                throw(BEDFFormatError("Transducer field should be blank in annotation channels"))
             end
             pos = 257 + edfh.channelcount * 96 + (i-1) * 8
             pblock.physdimension = String(trim(hdrbuf[pos:(pos+7)])) # physical dimensions eg. "uV"
@@ -845,22 +845,22 @@ function checkfile!(edfh)
             pos = 257 + edfh.channelcount * 128 + (i-1) * 8
             pblock.digmax = parse(Float32, trim(hdrbuf[pos:(pos+7)])) # digital maximum in above dimensions
             if edfh.edfplus && pblock.annotation && (pblock.digmin != -32768 || pblock.digmax != 32767)
-                throw(EDFFormatError("edfplus annotation data entry should have the digital min parameters set to extremes"))
+                throw(BEDFFormatError("edfplus annotation data entry should have the digital min parameters set to extremes"))
             elseif edfh.bdfplus && pblock.annotation && (pblock.digmin != -8388608 || pblock.digmax != 8388607)
-                throw(EDFFormatError("bdf annotation data entry should have the digital max parameters set to extremes"))
+                throw(BEDFFormatError("bdf annotation data entry should have the digital max parameters set to extremes"))
             elseif edfh.edf && (pblock.digmin < -32768 || pblock.digmin > 32767 ||
                                 pblock.digmax < -32768 || pblock.digmax > 32767)
-                throw(EDFFormatError("edf digital parameter out of range"))
+                throw(BEDFFormatError("edf digital parameter out of range"))
             elseif edfh.bdf && (pblock.digmin < -8388608 || pblock.digmin > 8388607 ||
                                 pblock.digmax < -8388608 || pblock.digmax > 8388607)
-                throw(EDFFormatError("bdf digital parameter out of range"))
+                throw(BEDFFormatError("bdf digital parameter out of range"))
             end
             pos = 257 + edfh.channelcount * 136 + (i-1) * 80
             pfchars = String(hdrbuf[pos:(pos+79)])
             throwifhasforbiddenchars(pfchars)
             pblock.prefilter = pfchars # prefilter field eg "HP:DC"
             if pblock.annotation && something(findfirst(c->!isspace(c), pfchars), 0) > 0
-                throw(EDFFormatError("Prefilter field should be blank in annotation channels"))
+                throw(BEDFFormatError("Prefilter field should be blank in annotation channels"))
             end
             pos = 257 + edfh.channelcount * 216 + (i-1) * 8
             pblock.smp_per_record = parse(Int, trim(hdrbuf[pos:(pos+7)])) # number of samples of this channel per data record
@@ -871,14 +871,14 @@ function checkfile!(edfh)
             pblock.reserved = reserved
             if !pblock.annotation && !edfh.edfplus && !edfh.bdfplus &&
                edfh.datarecord_duration < 0.0000001
-                throw(EDFFormatError("signal data may be mislabeled"))
+                throw(BEDFFormatError("signal data may be mislabeled"))
             end
             push!(edfh.signalparam, pblock)
         end
         if edfh.bdf && edfh.recordsize > 1578640
-            throw(EDFFormatError("record size too large for a bdf file"))
+            throw(BEDFFormatError("record size too large for a bdf file"))
         elseif edfh.recordsize > 10485760
-            throw(EDFFormatError("Record size too large for an edf file"))
+            throw(BEDFFormatError("Record size too large for an edf file"))
         end
 
     catch y
@@ -909,12 +909,12 @@ function checkfile!(edfh)
             patienttxt = String(edfh.patient)
             subfield = split(patienttxt)
             if length(subfield) < 4
-                throw(EDFFormatError("Plus patient identification lacking enough fields"))
+                throw(BEDFFormatError("Plus patient identification lacking enough fields"))
             end
             edfh.patientcode = subfield[1][1] == 'X' ? "" : subfield[1]
             edfh.patientcode = dash2space(edfh.patientcode)
             if subfield[2] != "M" && subfield[2] != "F" && subfield[2] != "X"
-                throw(EDFFormatError("patient identification second field must be X, F or M"))
+                throw(BEDFFormatError("patient identification second field must be X, F or M"))
             elseif subfield[2] == "M"
                 edfh.gender = "Male"
             elseif subfield[2] == "F"
@@ -927,7 +927,7 @@ function checkfile!(edfh)
             elseif !occursin(subfield[3][4:6], "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC") ||
                    !(Date(subfield[3], "dd-uuu-yyyy") isa Date)
                 @warn(subfield[3][4:6])
-                throw(EDFFormatError("Bad birthdate field in patient identification"))
+                throw(BEDFFormatError("Bad birthdate field in patient identification"))
             else
                 edfh.birthdate = subfield[3]
             end
@@ -954,14 +954,14 @@ function checkfile!(edfh)
             =#
             subfield = split(trim(edfh.recording))
             if length(subfield) < 5
-                throw(EDFFormatError("Not enough fields in plus recording data"))
+                throw(BEDFFormatError("Not enough fields in plus recording data"))
             elseif subfield[2] == "X"
                 edfh.startdatestring = ""
             else
                 edfh.startdatestring = subfield[2]
                 dor = Date(subfield[2], "dd-uuu-yyyy")
                 if Dates.year(dor) < 1970
-                    throw(EDFFormatError("bad startdate year in recording data: got $(Dates.year(dor)) from $dor"))
+                    throw(BEDFFormatError("bad startdate year in recording data: got $(Dates.year(dor)) from $dor"))
                 else
                     edfh.startdate_year = Dates.year(dor)
                 end
@@ -997,12 +997,12 @@ function checkfile!(edfh)
             if edfh.recordsize > 0 && filsiz >= edfh.headersize
                 edfh.datarecords = div(filsiz - edfh.headersize, edfh.recordsize)
             else
-                throw(EDFFormatError("cannot determine data record count: file size $filsiz is smaller than header size $(edfh.headersize)"))
+                throw(BEDFFormatError("cannot determine data record count: file size $filsiz is smaller than header size $(edfh.headersize)"))
             end
         else
             filszbyhdr = edfh.recordsize * edfh.datarecords + edfh.headersize
             if filsiz != filszbyhdr
-                throw(EDFFormatError("file size is not compatible with header information: header says $filszbyhdr, filesystem $filsiz"))
+                throw(BEDFFormatError("file size is not compatible with header information: header says $filszbyhdr, filesystem $filsiz"))
             end
         end
     catch y
@@ -1265,17 +1265,17 @@ function writeheader(edfh::BEDFPlus, fh::IOStream)
     written = 0
     channelcount = edfh.channelcount
     if channelcount < 0
-        throw("Channel count is negative")
+        throw(BEDFFormatError("Channel count is negative"))
     elseif channelcount > MAX_CHANNELS
-        throw("Channel count $channelcount is too large")
+        throw(BEDFFormatError("Channel count $channelcount is too large"))
     end
     for i in 1:channelcount
         if edfh.signalparam[i].smp_per_record < 1
-            throw("negative samples per record")
+            throw(BEDFFormatError("negative samples per record"))
         elseif edfh.signalparam[i].digmax <= edfh.signalparam[i].digmin
-            throw("digmax must be > digmin")
+            throw(BEDFFormatError("digmax must be > digmin"))
         elseif edfh.signalparam[i].physmax <= edfh.signalparam[i].physmin
-            throw("physical max must be > physical min")
+            throw(BEDFFormatError("physical max must be > physical min"))
         end
     end
     seekstart(fh)
@@ -1443,7 +1443,7 @@ Note the description arg is a text string, not an array argument here
 """
 function addannotation!(edfh, onset, duration, description)
     if isempty(edfh.annotations) && edfh.annotationchannel == 0
-        throw("No annotation channels in file")
+        throw(BEDFFormatError("No annotation channels in file"))
     end
     if typeof(duration) != String
         duration = "$duration"
