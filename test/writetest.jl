@@ -112,7 +112,7 @@ origbdfrate = samplerate(bdfh, 1)
 @test round(origbdfphysical[100], digits=3) == -484.984 # pyedflib readSignal(0)[99]
 
 # a plain BDF file has no annotation channel, so adding one should throw
-@test_throws BEDFFormatError addannotation!(bdfh, 1.0, "0", "should fail, no annotation channel")
+@test_throws DomainError addannotation!(bdfh, 1.0, "0", "should fail, no annotation channel")
 
 bdfh.signalparam[1].label = "TestLabel"
 copyedbdfh = deepcopy(bdfh)
