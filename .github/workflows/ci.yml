@@ -18,10 +18,16 @@ jobs:
       matrix:
         version:
           - '1' # Leave this line unchanged. '1' will automatically expand to the latest stable 1.x release of Julia.
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+          
+          - os: ubuntu-latest
+            arch: x64
+            
+          - os: windows-latest
+            arch: x64
+            
+          - os: macos-latest
+            arch: arm64
+            
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
